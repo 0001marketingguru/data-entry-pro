@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Data Entry Pro</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="app-card">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo-group">
+        <div class="logo-icon">⚡</div>
+        <div class="logo-text">
+          <h1>Data Entry Pro</h1>
+          <span class="subtitle">Claims Form Automation</span>
+        </div>
+      </div>
+      <span class="badge">MV3</span>
+    </header>
+
+    <!-- Target Indices Form -->
+    <section class="section">
+      <label for="indicesInput" class="label">Target Table Rows (Indices)</label>
+      <div class="input-container">
+        <input 
+          type="text" 
+          id="indicesInput" 
+          placeholder="e.g. 3, 7, 8, 9" 
+          value="3, 7, 8, 9"
+        />
+      </div>
+      <p class="hint">Comma-separated row numbers to set to "Approve".</p>
+    </section>
+
+    <!-- Execution Triggers -->
+    <div class="action-stack">
+      <button id="runAllBtn" class="btn btn-primary">
+        <span class="btn-icon">⚡</span>
+        Run Unified Automation
+      </button>
+
+      <div class="btn-group">
+        <button id="runDropdownsBtn" class="btn btn-secondary">
+          Approve Rows Only
+        </button>
+        <button id="runChecklistBtn" class="btn btn-secondary">
+          Check (3) Yes Radios
+        </button>
+      </div>
+    </div>
+
+    <!-- Live Status Console -->
+    <div id="statusBox" class="status-box hidden">
+      <div class="status-header">
+        <span class="status-indicator"></span>
+        <span id="statusTitle">Ready</span>
+      </div>
+      <div id="statusMessage" class="status-body">No actions executed yet.</div>
+    </div>
+
+    <!-- Shortcut Hint -->
+    <footer class="footer">
+      <span>Shortcut: <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>A</kbd></span>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
