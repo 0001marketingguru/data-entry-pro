@@ -167,7 +167,20 @@ body {
   background-color: var(--secondary-hover);
 }
 
-/* Collapsible Custom Drawer */
+.btn-outline {
+  background-color: transparent;
+  border: 1px dashed #64748b;
+  color: #94a3b8;
+  width: 100%;
+}
+
+.btn-outline:hover {
+  border-color: #94a3b8;
+  color: #f1f5f9;
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+/* Custom Drawer */
 .custom-details {
   background-color: #1e293b;
   border: 1px solid var(--border);
@@ -275,6 +288,24 @@ details[open] .summary-arrow {
   font-size: 11px;
   color: #cbd5e1;
   word-break: break-word;
+}
+
+/* Diagnostic Bar */
+.diagnostic-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+}
+
+.copy-success {
+  font-size: 11px;
+  color: #34d399;
+  font-weight: 500;
+}
+
+.copy-success.hidden {
+  display: none;
 }
 
 .footer {

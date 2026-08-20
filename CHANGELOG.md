@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.3] - 2026-08-20
+
+### Added
+- **Sequential Row Execution Loop**: Robust row-by-row async execution with menu polling delay (250ms) and keyboard `ArrowDown` + `Enter` fallback to ensure every single row (Rows 1 through 11+) is approved without portal race conditions.
+- **📋 1-Click Diagnostic Logger**: Added a "Copy Diagnostic Log for AI" button in the popup to instantly capture and copy complete execution traces to clipboard for debugging with developers/AI.
+
+---
+
 ## [1.1.1] - 2026-08-20
 
 ### Changed
@@ -21,22 +29,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dynamic Table Scanner (`scanTableInfo`)**: Automatically counts total actionable claim rows and detects individual row statuses on any page without hardcoded bounds.
 - **Style A Single Quick-Action Button**: Prominent `⚡ Approve All N Rows & Checklist` button dynamically labeled with the detected row count.
 - **Unconditional Batch Approval (Option A & B)**: One-click approval of all detected rows across diverse form layouts.
-- **Live Detection Banner**: Visual status badge displaying row counts (e.g. `5 Claim Rows Found (1 approved, 4 pending)`).
-- **Collapsible Custom Indices Drawer**: Optional dropdown input for targeted index overrides when needed.
-
----
-
-## [1.0.0] - 2026-08-20
-
-### Added
-- Initial production release of **Data Entry Pro** under Manifest V3.
-- **`approveTableItems(indices)`**: Automates tabular action dropdowns from `"Select"` to `"Approve"` for dynamic target row indices.
-- **`checkYesRadioButtons()`**: Automatically isolates and checks `"Yes"` on the 3 standard medical evaluation questions at the bottom of the claims review form.
-- **Framework Event Hooks**: Direct prototype value and checked setter bypass for React 16+, Angular, and Vue reactive forms.
-- **Custom Dropdown Support**: Full compatibility with both native HTML `<select>` and custom React-Select / ARIA combobox implementations.
-- **Multi-Trigger Modalities**:
-  - Dark-mode Extension Popup with customizable indices input.
-  - Global Keyboard Shortcut.
-  - Console API: `window.DataEntryPro`.
-- **Visual Feedback**: Non-intrusive on-screen floating toast notification and soft green row highlight pulses.
-- **Extension Assets**: 16px, 48px, 128px high-resolution icons.
+- **Live Detection Banner**: Visual status badge displaying row counts.

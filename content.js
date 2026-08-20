@@ -1,16 +1,18 @@
 /**
- * Data Entry Pro v1.1.2 - Enterprise Claims UI Automation Content Script
+ * Data Entry Pro v1.1.3 - Enterprise Claims UI Automation Content Script
  * 
  * Specifically optimized for PMJAY Payer "Actionable details" table:
+ * - Robust sequential row loop with dynamic React-Select menu polling & keyboard fallback
+ * - Full detailed diagnostic logger with 1-click clipboard export
  * - Disambiguates between static summary table and interactive Actionable Grid
- * - Targets Action column dropdowns (Approve / Query / Reject)
- * - Automatically switches "Query", "Select", or "Reject" to "Approve"
  * - Selects "Yes" on all 3 standard medical evaluation checklist rows
- * - Dispatches React prototype events for controlled state sync
  */
 
 (function () {
   'use strict';
+
+  // Global Diagnostic History store
+  window.__DATA_ENTRY_PRO_LOGS__ = window.__DATA_ENTRY_PRO_LOGS__ || [];
 
   // =========================================================================
   // --- Section 1: UI Feedback Utilities (Toast & Row Highlight) ---
@@ -35,7 +37,7 @@
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       font-size: 13px;
       line-height: 1.4;
-      max-width: 380px;
+      max-width: 400px;
       border: 1px solid ${isSuccess ? '#059669' : '#dc2626'};
       pointer-events: none;
       transition: opacity 0.3s ease, transform 0.3s ease;
@@ -118,16 +120,13 @@
   // --- Section 3: Semantic Table & Action Column Finder ---
   // =========================================================================
 
-  /**
-   * Disambiguates between static read-only tables and the interactive Actionable Details Grid
-   */
   function getActionableTableContext() {
     const candidateTables = Array.from(document.querySelectorAll('table'));
     let targetTable = null;
     let actionColIndex = -1;
     let targetRows = [];
 
-    // Priority 1: Table containing interactive React-Select or select elements
+    // Priority 1: Find table with interactive dropdown controls or inputs
     for (const table of candidateTables) {
       const hasInteractiveControls = table.querySelector('.css-1nxbv4n-control, [class*="-control"], [class*="react-select"], select, [role="combobox"]');
       if (hasInteractiveControls) {
@@ -145,7 +144,7 @@
       }
     }
 
-    // Priority 2: Search under "Actionable details" section container
+    // Priority 2: Look under section with heading "Actionable details"
     if (targetRows.length === 0) {
       const headings = Array.from(document.querySelectorAll('div, h2, h3, h4, span, p'));
       const actionHeading = headings.find(el => el.textContent.trim().toLowerCase() === 'actionable details');
@@ -170,9 +169,6 @@
     };
   }
 
-  /**
-   * Scans table to return row details, codes (e.g. LB142, RI020), and current action status
-   */
   function scanTableInfo() {
     const { rows, actionColIndex } = getActionableTableContext();
     
@@ -181,7 +177,6 @@
       const rowNo = tds[0]?.innerText?.trim() || `${idx + 1}`;
       const code = tds[1]?.innerText?.trim() || `Item ${idx + 1}`;
       
-      // Determine Action cell
       let actionCell = actionColIndex >= 0 && tds[actionColIndex] ? tds[actionColIndex] : null;
       if (!actionCell) {
         actionCell = tds.find(td => td.querySelector('select, [class*="-control"], [class*="react-select"], [role="combobox"]')) || tds[tds.length - 4];
@@ -212,20 +207,148 @@
   }
 
   // =========================================================================
-  // --- Section 4: Task 1 - Set Action Dropdown to "Approve" ---
+  // --- Section 4: Robust React-Select Setter for a Single Row ---
   // =========================================================================
 
   /**
-   * Targets the Action dropdown in each row and changes "Query", "Select", or "Reject" to "Approve"
+   * Automates setting a single React-Select or <select> dropdown to "Approve"
    */
+  async function setRowDropdownToApprove(row, rowNum, actionColIndex) {
+    const startTime = Date.now();
+    const tds = Array.from(row.querySelectorAll('td'));
+    const code = tds[1]?.innerText?.trim() || `Row ${rowNum}`;
+
+    let actionCell = actionColIndex >= 0 && tds[actionColIndex] ? tds[actionColIndex] : null;
+    if (!actionCell) {
+      actionCell = tds.find(td => td.querySelector('select, [class*="-control"], [class*="react-select"], [role="combobox"]')) || row;
+    }
+
+    const logEntry = {
+      row: rowNum,
+      code,
+      initialText: (actionCell.innerText || '').trim().replace(/\n/g, ' '),
+      method: 'none',
+      status: 'pending',
+      timeMs: 0
+    };
+
+    // Case 1: Standard <select>
+    const selectElem = actionCell.querySelector('select') || row.querySelector('select');
+    if (selectElem) {
+      for (let i = 0; i < selectElem.options.length; i++) {
+        const opt = selectElem.options[i];
+        const t = (opt.text || opt.innerText || '').trim();
+        const v = (opt.value || '').trim();
+        if (/^approve[d]?$/i.test(t) || /^approve[d]?$/i.test(v)) {
+          selectElem.selectedIndex = i;
+          dispatchFrameworkValueChange(selectElem, opt.value);
+          logEntry.method = 'standard_select';
+          logEntry.status = 'approved';
+          logEntry.finalText = t;
+          logEntry.timeMs = Date.now() - startTime;
+          return { success: true, log: logEntry };
+        }
+      }
+    }
+
+    // Case 2: React-Select Component
+    const reactSelectControl = actionCell.querySelector('.css-1nxbv4n-control, [class*="-control"], [class*="react-select"], [role="combobox"]') ||
+                               row.querySelector('.css-1nxbv4n-control, [class*="-control"]');
+    const comboboxInput = actionCell.querySelector('input[role="combobox"], input[id^="react-select-"], input[type="text"]') ||
+                          row.querySelector('input[role="combobox"], input[id^="react-select-"]');
+    const hiddenBackingInput = actionCell.querySelector('input[name*="selecthidden"], input[id*="selecthidden"]') ||
+                               row.querySelector('input[name*="selecthidden"]');
+
+    if (!reactSelectControl && !comboboxInput) {
+      logEntry.status = 'no_control_found';
+      logEntry.timeMs = Date.now() - startTime;
+      return { success: false, log: logEntry };
+    }
+
+    try {
+      // Step A: Focus and trigger menu opening
+      if (comboboxInput) {
+        comboboxInput.focus();
+      }
+
+      const clickTarget = reactSelectControl || comboboxInput;
+      clickTarget.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      
+      clickTarget.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+      clickTarget.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+      clickTarget.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+
+      // Also dispatch Down Arrow on input to guarantee dropdown list opens
+      if (comboboxInput) {
+        comboboxInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, bubbles: true }));
+      }
+
+      // Step B: Wait for menu portal to appear in DOM (poll up to 250ms)
+      let approveOption = null;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        await new Promise(r => setTimeout(r, 45));
+
+        const menuOptions = Array.from(document.querySelectorAll('[class*="-option"], [role="option"], .select-item, [id*="-option-"], div[id^="react-select-"]'));
+        approveOption = menuOptions.find(opt => {
+          const t = (opt.innerText || opt.textContent || '').trim().toLowerCase();
+          return t === 'approve' || t === 'approved';
+        });
+
+        if (approveOption) break;
+      }
+
+      // Step C: Click the Approve option if found
+      if (approveOption) {
+        approveOption.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+        approveOption.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+        approveOption.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+        logEntry.method = 'react_select_menu_click';
+        logEntry.status = 'approved';
+      } else {
+        // Step D: Keyboard Fallback (Type "Approve" + Enter)
+        if (comboboxInput) {
+          comboboxInput.focus();
+          dispatchFrameworkValueChange(comboboxInput, 'Approve');
+          comboboxInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
+          logEntry.method = 'react_select_keyboard_fallback';
+          logEntry.status = 'approved';
+        } else {
+          logEntry.status = 'menu_option_not_found';
+        }
+      }
+
+      // Step E: Update hidden backing input
+      if (hiddenBackingInput) {
+        dispatchFrameworkValueChange(hiddenBackingInput, 'Approve');
+      }
+
+      // Wait brief cooldown so React clears the portal before next row
+      await new Promise(r => setTimeout(r, 60));
+
+      const finalText = (actionCell.querySelector('[class*="singleValue"], .css-1i1tyke-singleValue')?.innerText || actionCell.innerText || '').trim().replace(/\n/g, ' ');
+      logEntry.finalText = finalText;
+      logEntry.timeMs = Date.now() - startTime;
+
+      return { success: true, log: logEntry };
+    } catch (err) {
+      logEntry.status = 'error';
+      logEntry.error = err.message;
+      logEntry.timeMs = Date.now() - startTime;
+      return { success: false, log: logEntry };
+    }
+  }
+
+  // =========================================================================
+  // --- Section 5: Task 1 - Set Action Dropdown to "Approve" (All Rows) ---
+  // =========================================================================
+
   async function approveTableItems(targetIndices = 'ALL') {
     const { rows: targetRows, actionColIndex } = getActionableTableContext();
 
     if (targetRows.length === 0) {
-      return { success: false, message: 'Action table rows not found', approvedCount: 0, totalTargeted: 0 };
+      return { success: false, message: 'Action table rows not found', approvedCount: 0, totalTargeted: 0, logs: [] };
     }
 
-    // Determine target list (1-based indices)
     let indicesToProcess = [];
     if (targetIndices === 'ALL' || !Array.isArray(targetIndices) || targetIndices.length === 0) {
       indicesToProcess = targetRows.map((_, i) => i + 1);
@@ -234,112 +357,38 @@
       indicesToProcess = minVal === 0 ? targetIndices.map(n => n + 1) : targetIndices;
     }
 
+    console.log(`[Data Entry Pro v1.1.3] Sequential approval processing on ${indicesToProcess.length} rows...`);
+
     let approvedCount = 0;
-    const processedLog = [];
+    const executionLogs = [];
 
     for (const rowNum of indicesToProcess) {
       const rowIndex = rowNum - 1;
       const row = targetRows[rowIndex];
 
       if (!row) {
-        processedLog.push({ index: rowNum, status: 'row_not_found' });
+        executionLogs.push({ row: rowNum, status: 'row_index_out_of_bounds' });
         continue;
       }
 
       highlightElement(row);
-      const tds = Array.from(row.querySelectorAll('td'));
 
-      // Locate the Action cell specifically
-      let actionCell = actionColIndex >= 0 && tds[actionColIndex] ? tds[actionColIndex] : null;
-      if (!actionCell) {
-        actionCell = tds.find(td => td.querySelector('select, [class*="-control"], [class*="react-select"], [role="combobox"]')) || row;
-      }
-
-      const currentLabel = (actionCell.querySelector('[class*="singleValue"], .css-1i1tyke-singleValue, select')?.innerText || actionCell.innerText || '').trim();
-
-      // Case A: Standard HTML <select>
-      const selectElem = actionCell.querySelector('select') || row.querySelector('select');
-      if (selectElem) {
-        let optionFound = false;
-        for (let i = 0; i < selectElem.options.length; i++) {
-          const opt = selectElem.options[i];
-          const text = (opt.text || opt.innerText || '').trim();
-          const val = (opt.value || '').trim();
-
-          if (/^approve[d]?$/i.test(text) || /^approve[d]?$/i.test(val)) {
-            selectElem.selectedIndex = i;
-            dispatchFrameworkValueChange(selectElem, opt.value);
-            optionFound = true;
-            approvedCount++;
-            processedLog.push({ index: rowNum, type: 'standard_select', status: 'approved' });
-            break;
-          }
-        }
-        if (optionFound) continue;
-      }
-
-      // Case B: React-Select (Approve / Query / Reject dropdown)
-      const reactSelectControl = actionCell.querySelector('[class*="-control"], [class*="react-select"], [role="combobox"], .css-1nxbv4n-control') || 
-                                 row.querySelector('[class*="-control"], [class*="react-select"], [role="combobox"], .css-1nxbv4n-control');
-      const hiddenBackingInput = actionCell.querySelector('input[name*="selecthidden"], input[id*="selecthidden"]') || row.querySelector('input[name*="selecthidden"]');
-
-      if (reactSelectControl) {
-        try {
-          // Open dropdown menu
-          reactSelectControl.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-          reactSelectControl.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-          reactSelectControl.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-
-          // Wait micro-tick for React menu portal to mount
-          await new Promise((res) => setTimeout(res, 80));
-
-          // Look for "Approve" option in the document portal / menu
-          const menuOptions = Array.from(document.querySelectorAll('[class*="-option"], [role="option"], .select-item, [id*="-option-"], div'));
-          const approveOption = menuOptions.find(opt => {
-            const t = (opt.innerText || opt.textContent || '').trim().toLowerCase();
-            return t === 'approve' || t === 'approved';
-          });
-
-          if (approveOption) {
-            approveOption.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-            approveOption.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-            approvedCount++;
-            processedLog.push({ index: rowNum, type: 'react_select', status: 'approved' });
-          } else {
-            const comboboxInput = reactSelectControl.querySelector('input[role="combobox"], input[type="text"]');
-            if (comboboxInput) {
-              comboboxInput.focus();
-              dispatchFrameworkValueChange(comboboxInput, 'Approve');
-              comboboxInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
-              approvedCount++;
-              processedLog.push({ index: rowNum, type: 'react_select_input', status: 'approved' });
-            } else if (/^approve[d]?$/i.test(currentLabel)) {
-              approvedCount++;
-              processedLog.push({ index: rowNum, type: 'react_select', status: 'already_approved' });
-            }
-          }
-
-          if (hiddenBackingInput) {
-            dispatchFrameworkValueChange(hiddenBackingInput, 'Approve');
-          }
-        } catch (err) {
-          processedLog.push({ index: rowNum, status: 'error', error: err.message });
-        }
-      } else {
-        processedLog.push({ index: rowNum, status: 'no_dropdown_element' });
-      }
+      // Execute row approval sequentially
+      const { success, log } = await setRowDropdownToApprove(row, rowNum, actionColIndex);
+      executionLogs.push(log);
+      if (success) approvedCount++;
     }
 
     return {
       success: approvedCount > 0,
       approvedCount,
       totalTargeted: indicesToProcess.length,
-      details: processedLog
+      logs: executionLogs
     };
   }
 
   // =========================================================================
-  // --- Section 5: Task 2 - Standard 3-Row Medical Evaluation Checklist ---
+  // --- Section 6: Task 2 - Standard 3-Row Medical Evaluation Checklist ---
   // =========================================================================
 
   function checkYesRadioButtons() {
@@ -354,7 +403,7 @@
     const allRadioInputs = Array.from(document.querySelectorAll('input[type="radio"]'));
 
     if (allRadioInputs.length === 0) {
-      return { success: false, message: 'No radio buttons found', checkedCount: 0, expected: 3 };
+      return { success: false, message: 'No radio buttons found', checkedCount: 0, expected: 3, logs: [] };
     }
 
     const candidateContainers = Array.from(document.querySelectorAll('form, .row, fieldset, tr, .formgroup'));
@@ -437,12 +486,12 @@
       success: checkedCount >= 3,
       checkedCount,
       expected: 3,
-      details: checklistResults
+      logs: checklistResults
     };
   }
 
   // =========================================================================
-  // --- Section 6: Unified Trigger Runner & Extension Messaging ---
+  // --- Section 7: Unified Runner & Diagnostic Store ---
   // =========================================================================
 
   async function runDataEntryProAutomation(config = {}) {
@@ -458,14 +507,22 @@
     
     showOnScreenNotification('Automation Complete', msg, isSuccess);
 
-    const summary = {
+    const diagnosticReport = {
       timestamp: new Date().toISOString(),
-      dropdownTask: tableResult,
-      checklistTask: radioResult,
+      url: window.location.href,
+      tableResult,
+      radioResult,
       overallSuccess: isSuccess
     };
 
-    return summary;
+    // Store in memory & chrome.storage for diagnostic retrieval
+    window.__DATA_ENTRY_PRO_LAST_RUN__ = diagnosticReport;
+    window.__DATA_ENTRY_PRO_LOGS__.unshift(diagnosticReport);
+    if (window.__DATA_ENTRY_PRO_LOGS__.length > 10) window.__DATA_ENTRY_PRO_LOGS__.pop();
+
+    chrome.storage?.local?.set({ lastDiagnosticReport: diagnosticReport });
+
+    return diagnosticReport;
   }
 
   // Global API
@@ -473,7 +530,8 @@
     scanTableInfo,
     approveTableItems,
     checkYesRadioButtons,
-    runDataEntryProAutomation
+    runDataEntryProAutomation,
+    getLastReport: () => window.__DATA_ENTRY_PRO_LAST_RUN__ || null
   };
 
   // Message listener
@@ -486,6 +544,13 @@
         sendResponse({ status: 'ERROR', error: err.message });
       }
       return false;
+    }
+
+    if (request.action === 'GET_DIAGNOSTIC_LOG') {
+      chrome.storage?.local?.get(['lastDiagnosticReport'], (res) => {
+        sendResponse({ status: 'COMPLETED', report: res?.lastDiagnosticReport || window.__DATA_ENTRY_PRO_LAST_RUN__ || null });
+      });
+      return true;
     }
 
     if (request.action === 'RUN_AUTOMATION') {
@@ -526,4 +591,6 @@
       return false;
     }
   });
+
+  console.log('[Data Entry Pro v1.1.3] Content script ready with sequential loop & diagnostic export.');
 })();

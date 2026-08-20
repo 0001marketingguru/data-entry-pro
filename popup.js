@@ -1,4 +1,4 @@
-// Data Entry Pro v1.1.0 - Popup Controller
+// Data Entry Pro v1.1.3 - Popup Controller
 
 document.addEventListener('DOMContentLoaded', async () => {
   const detectionBox = document.getElementById('detectionBox');
@@ -13,6 +13,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const statusBox = document.getElementById('statusBox');
   const statusTitle = document.getElementById('statusTitle');
   const statusMessage = document.getElementById('statusMessage');
+  const copyDiagnosticBtn = document.getElementById('copyDiagnosticBtn');
+  const copySuccessMsg = document.getElementById('copySuccessMsg');
 
   let detectedRowCount = 0;
 
@@ -66,7 +68,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    showStatus('Processing', 'Approving all detected table rows & 3 checklist radios...', true);
+    showStatus('Processing', 'Executing sequential approvals across all rows...', true);
 
     chrome.tabs.sendMessage(activeTabId, { action: 'RUN_AUTOMATION', config: { indices: 'ALL' } }, (res) => {
       if (chrome.runtime.lastError) {
@@ -75,15 +77,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
 
       if (res && res.status === 'COMPLETED') {
-        const { dropdownTask, checklistTask } = res.summary;
+        const { tableResult, radioResult } = res.summary;
         const msg = `
-          <strong>Dropdowns:</strong> Set <strong>${dropdownTask.approvedCount} of ${dropdownTask.totalTargeted}</strong> rows to "Approve".<br>
-          <strong>Checklist:</strong> Selected "Yes" on <strong>${checklistTask.checkedCount} of ${checklistTask.expected}</strong> evaluation items.
+          <strong>Dropdowns:</strong> Set <strong>${tableResult.approvedCount} of ${tableResult.totalTargeted}</strong> rows to "Approve".<br>
+          <strong>Checklist:</strong> Selected "Yes" on <strong>${radioResult.checkedCount} of ${radioResult.expected}</strong> evaluation items.
         `;
-        showStatus('All Rows Approved ✅', msg, true);
+        showStatus('Batch Execution Finished', msg, tableResult.success);
         
         // Refresh table info
-        detectionText.innerHTML = `<strong>${dropdownTask.approvedCount} Rows Approved ✅</strong>`;
+        detectionText.innerHTML = `<strong>${tableResult.approvedCount}/${tableResult.totalTargeted} Rows Approved ✅</strong>`;
       } else {
         showStatus('Error', res?.error || 'Unknown error occurred.', false);
       }
@@ -95,7 +97,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const activeTabId = await getActiveTabId();
     if (!activeTabId) return;
 
-    showStatus('Processing', 'Approving all table rows...', true);
+    showStatus('Processing', 'Approving all table rows sequentially...', true);
 
     chrome.tabs.sendMessage(activeTabId, { action: 'APPROVE_ALL_ROWS' }, (res) => {
       if (chrome.runtime.lastError) {
@@ -103,7 +105,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
       if (res?.status === 'COMPLETED') {
-        showStatus('Table Approved', `Successfully approved ${res.result.approvedCount} of ${res.result.totalTargeted} rows.`, true);
+        showStatus('Table Approved', `Successfully approved ${res.result.approvedCount} of ${res.result.totalTargeted} rows.`, res.result.success);
       }
     });
   });
@@ -121,7 +123,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
       if (res?.status === 'COMPLETED') {
-        showStatus('Checklist Updated', `Selected "Yes" for ${res.result.checkedCount} evaluation rows.`, true);
+        showStatus('Checklist Updated', `Selected "Yes" for ${res.result.checkedCount} evaluation rows.`, res.result.success);
       }
     });
   });
@@ -147,8 +149,52 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
       if (res?.status === 'COMPLETED') {
-        showStatus('Success', `Approved ${res.result.approvedCount} of ${res.result.totalTargeted} targeted rows.`, true);
+        showStatus('Success', `Approved ${res.result.approvedCount} of ${res.result.totalTargeted} targeted rows.`, res.result.success);
       }
     });
   });
+
+  // 6. Copy Diagnostic Log to Clipboard for Testers & AI
+  copyDiagnosticBtn.addEventListener('click', async () => {
+    const activeTabId = await getActiveTabId();
+    if (!activeTabId) return;
+
+    chrome.tabs.sendMessage(activeTabId, { action: 'GET_DIAGNOSTIC_LOG' }, (res) => {
+      let reportData = res?.report;
+      
+      if (!reportData) {
+        chrome.storage?.local?.get(['lastDiagnosticReport'], (st) => {
+          reportData = st?.lastDiagnosticReport;
+          writeReportToClipboard(reportData);
+        });
+      } else {
+        writeReportToClipboard(reportData);
+      }
+    });
+  });
+
+  function writeReportToClipboard(report) {
+    if (!report) {
+      navigator.clipboard.writeText("No diagnostic run logged yet. Please trigger an automation run first.");
+      showCopySuccess("No run log yet (copied note)");
+      return;
+    }
+
+    const jsonReport = JSON.stringify(report, null, 2);
+    const formattedText = `### 📋 Data Entry Pro Diagnostic Log\n**Timestamp:** ${report.timestamp}\n**Overall Success:** ${report.overallSuccess}\n**Dropdowns Approved:** ${report.tableResult?.approvedCount}/${report.tableResult?.totalTargeted}\n\n\`\`\`json\n${jsonReport}\n\`\`\``;
+
+    navigator.clipboard.writeText(formattedText).then(() => {
+      showCopySuccess("Diagnostic log copied! Paste in chat.");
+    }).catch(err => {
+      console.error("Clipboard copy failed:", err);
+    });
+  }
+
+  function showCopySuccess(msg = "Copied to clipboard!") {
+    copySuccessMsg.textContent = msg;
+    copySuccessMsg.classList.remove('hidden');
+    setTimeout(() => {
+      copySuccessMsg.classList.add('hidden');
+    }, 3000);
+  }
 });
