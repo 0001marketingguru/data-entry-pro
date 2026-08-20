@@ -7,12 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.1.4] - 2026-08-20
+## [1.2.0] - 2026-08-20
 
 ### Added
-- **Hardened Enterprise `update.bat`**: Self-healing updater with Git auto-reset (`git reset --hard origin/main`), PowerShell direct ZIP fallback, and automated Chrome Extension tab launcher.
-- **In-Extension GitHub Update Checker**: Live version checking via GitHub Releases API displaying real-time update notifications in the popup.
-- **1-Click Desktop Shortcut Installer (`setup_desktop.bat`)**: Generates an "Update Data Entry Pro" desktop shortcut for non-technical users.
+- **⚡ Zero-Click In-Browser Auto-Reload**: Introduced `reload_signal.json` signal bridge in `background.js`. Whenever `update.bat` or `rollback.bat` runs, the Chrome extension automatically reloads itself in memory with **0 clicks** required.
+- **🔄 1-Click Rollback Script (`rollback.bat`)**: Automatically restores the previous working snapshot and triggers an instant Chrome auto-reload.
+- **🛡️ Automated Backup Snapshotting & Pruning**: `update.bat` automatically creates `.zip` archives of the previous version in `backups/` and auto-prunes to retain the last 3 safe restore points.
+- **In-Extension GitHub Update Checker**: Real-time update notifications inside the popup UI.
+- **1-Click Desktop Shortcut Installer (`setup_desktop.bat`)**: Places a 1-click update icon directly on the user's Desktop.
 
 ---
 
