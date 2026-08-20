@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Data Entry Pro</title>
+  <title>Data Entry Pro v1.1</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
@@ -17,39 +17,50 @@
           <span class="subtitle">Claims Form Automation</span>
         </div>
       </div>
-      <span class="badge">MV3</span>
+      <span class="badge">v1.1</span>
     </header>
 
-    <!-- Target Indices Form -->
-    <section class="section">
-      <label for="indicesInput" class="label">Target Table Rows (Indices)</label>
-      <div class="input-container">
-        <input 
-          type="text" 
-          id="indicesInput" 
-          placeholder="e.g. 3, 7, 8, 9" 
-          value="3, 7, 8, 9"
-        />
-      </div>
-      <p class="hint">Comma-separated row numbers to set to "Approve".</p>
-    </section>
+    <!-- Live Table Detection Banner -->
+    <div id="detectionBox" class="detection-banner">
+      <span class="pulse-dot"></span>
+      <span id="detectionText">Scanning claim table...</span>
+    </div>
 
-    <!-- Execution Triggers -->
+    <!-- Primary Quick-Action (Style A) -->
     <div class="action-stack">
-      <button id="runAllBtn" class="btn btn-primary">
+      <button id="approveAllUnifiedBtn" class="btn btn-primary">
         <span class="btn-icon">⚡</span>
-        Run Unified Automation
+        <span id="approveAllUnifiedLabel">Approve All Rows & Checklist</span>
       </button>
 
       <div class="btn-group">
-        <button id="runDropdownsBtn" class="btn btn-secondary">
-          Approve Rows Only
+        <button id="approveTableOnlyBtn" class="btn btn-secondary">
+          <span id="approveTableOnlyLabel">Approve Table Only</span>
         </button>
-        <button id="runChecklistBtn" class="btn btn-secondary">
-          Check (3) Yes Radios
+        <button id="checkRadiosOnlyBtn" class="btn btn-secondary">
+          Check (3) Radios Only
         </button>
       </div>
     </div>
+
+    <!-- Collapsible / Advanced Custom Indices -->
+    <details class="custom-details" id="customDetails">
+      <summary class="custom-summary">
+        <span>Target Specific Rows (Optional)</span>
+        <span class="summary-arrow">▾</span>
+      </summary>
+      <div class="custom-body">
+        <div class="input-container">
+          <input 
+            type="text" 
+            id="indicesInput" 
+            placeholder="e.g. 2, 3, 4, 5" 
+          />
+          <button id="approveCustomBtn" class="btn btn-sm btn-primary">Run</button>
+        </div>
+        <p class="hint">Leave empty to auto-target all detected rows.</p>
+      </div>
+    </details>
 
     <!-- Live Status Console -->
     <div id="statusBox" class="status-box hidden">
@@ -62,7 +73,7 @@
 
     <!-- Shortcut Hint -->
     <footer class="footer">
-      <span>Shortcut: <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>A</kbd></span>
+      <span>Shortcut: <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>A</kbd> (Runs Approve All)</span>
     </footer>
   </div>
 

@@ -1,11 +1,12 @@
 /**
- * Data Entry Pro - Enterprise Claims UI Automation Content Script
+ * Data Entry Pro v1.1.0 - Enterprise Claims UI Automation Content Script
  * 
  * Features:
- * 1. Tabular Action Dropdowns (setting "Select" -> "Approve" for dynamic target indices)
- * 2. Standard 3-Row Medical Evaluation Checklist (setting "Yes" radio buttons)
- * 3. Reactive Framework Event Hooks (React synthetic tracker bypass, Angular, Vue)
- * 4. Non-intrusive on-screen visual toast & subtle element highlighting
+ * 1. Dynamic Table Scanner (Auto-detects total row count & claim codes on any form)
+ * 2. "Approve All" Unconditional Batch Processing (Option A & B applied)
+ * 3. Standard 3-Row Medical Evaluation Checklist (setting "Yes" radio buttons)
+ * 4. Reactive Framework Event Hooks (React synthetic tracker bypass, Angular, Vue)
+ * 5. On-Screen Feedback & Visual Pulse Highlighting
  */
 
 (function () {
@@ -63,7 +64,7 @@
     const prevTransition = el.style.transition;
     const prevBg = el.style.backgroundColor;
     el.style.transition = 'background-color 0.4s ease';
-    el.style.backgroundColor = 'rgba(16, 185, 129, 0.15)';
+    el.style.backgroundColor = 'rgba(16, 185, 129, 0.18)';
     setTimeout(() => {
       el.style.backgroundColor = prevBg;
       el.style.transition = prevTransition;
@@ -74,14 +75,8 @@
   // --- Section 2: Framework Event Dispatchers ---
   // =========================================================================
 
-  /**
-   * Overrides value setters to bypass React 16+ / Angular / Vue synthetic event
-   * value-tracking wrappers and dispatches bubbling input & change events.
-   */
   function dispatchFrameworkValueChange(element, value) {
     if (!element) return;
-    
-    // React prototype value setter bypass
     const valueSetter = Object.getOwnPropertyDescriptor(element, 'value')?.set;
     const prototype = Object.getPrototypeOf(element);
     const prototypeValueSetter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
@@ -94,18 +89,12 @@
       element.value = value;
     }
 
-    // Trigger full native UI event lifecycle
     element.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
     element.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
   }
 
-  /**
-   * Dispatches complete native click and check events to satisfy reactive forms
-   */
   function dispatchFrameworkRadioClick(radioInput) {
     if (!radioInput) return;
-
-    // React prototype checked setter bypass
     const checkedSetter = Object.getOwnPropertyDescriptor(radioInput, 'checked')?.set;
     const prototype = Object.getPrototypeOf(radioInput);
     const prototypeCheckedSetter = Object.getOwnPropertyDescriptor(prototype, 'checked')?.set;
@@ -118,7 +107,6 @@
       radioInput.checked = true;
     }
 
-    // Native mouse and form event chain
     radioInput.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
     radioInput.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
     radioInput.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
@@ -127,69 +115,116 @@
   }
 
   // =========================================================================
-  // --- Section 3: Task 1 - Tabular Dropdown Automation ---
+  // --- Section 3: Dynamic Table Inspector & Finder ---
   // =========================================================================
 
   /**
-   * Loops through data grid/table rows and changes dropdowns to "Approve".
-   * Robustly handles both standard <select> tags and modern custom/react-select comboboxes.
-   * 
-   * @param {number[]} indices - Dynamic array of row indices to approve (e.g. [3, 7, 8, 9])
-   * @returns {Promise<Object>} result - Execution metrics and status log
+   * Disambiguates and locates the actionable claim rows in the portal
    */
-  async function approveTableItems(indices = []) {
-    console.log(`[Data Entry Pro] Starting approveTableItems for target indices:`, indices);
-    
-    if (!indices || indices.length === 0) {
-      return { success: true, message: 'No row indices specified', approvedCount: 0, totalTargeted: 0 };
-    }
-
-    // Locate candidate actionable data tables
+  function getActionableTableRows() {
     const candidateTables = Array.from(document.querySelectorAll('table'));
     let targetRows = [];
 
-    // Find table containing actionable procedure/claim items
     for (const table of candidateTables) {
       const rows = Array.from(table.querySelectorAll('tbody tr'));
       if (rows.length > 0) {
-        const hasActionColumn = table.innerText.includes('Action') || 
-                                table.innerText.includes('Procedure') || 
-                                table.innerText.includes('Package Code');
-        if (hasActionColumn || rows.some(r => r.querySelector('select, [class*="react-select"], [class*="-control"], [class*="container"]'))) {
+        const text = table.innerText;
+        const hasActionHeaders = text.includes('Action') && 
+                                (text.includes('Package Code') || text.includes('Procedure Code') || text.includes('ICHI'));
+        if (hasActionHeaders || rows.some(r => r.querySelector('select, [class*="react-select"], [class*="-control"], .css-1nxbv4n-control'))) {
           targetRows = rows;
           break;
         }
       }
     }
 
-    // Fallback: search across all table rows if specific container wasn't isolated
     if (targetRows.length === 0) {
-      targetRows = Array.from(document.querySelectorAll('table tbody tr, .table-row, [role="row"]'))
-        .filter(r => !r.closest('thead') && r.querySelectorAll('td').length >= 3);
+      // Look for container rows under "Actionable details" header
+      const actionableHeading = Array.from(document.querySelectorAll('div, h2, h3, h4, span'))
+        .find(el => el.textContent.trim().toLowerCase() === 'actionable details');
+      if (actionableHeading) {
+        const section = actionableHeading.closest('.row, .col-lg-12, div');
+        if (section) {
+          const rows = Array.from(section.querySelectorAll('tbody tr, tr')).filter(r => !r.closest('thead') && r.querySelectorAll('td').length >= 4);
+          if (rows.length > 0) targetRows = rows;
+        }
+      }
     }
+
+    if (targetRows.length === 0) {
+      targetRows = Array.from(document.querySelectorAll('table tbody tr'))
+        .filter(r => !r.closest('thead') && r.querySelectorAll('td').length >= 5);
+    }
+
+    return targetRows;
+  }
+
+  /**
+   * Scans the page to extract metadata on how many rows exist and their status
+   */
+  function scanTableInfo() {
+    const rows = getActionableTableRows();
+    const rowDetails = rows.map((row, idx) => {
+      const tds = Array.from(row.querySelectorAll('td'));
+      const rowNo = tds[0]?.innerText?.trim() || `${idx + 1}`;
+      const code = tds[1]?.innerText?.trim() || `Item ${idx + 1}`;
+      
+      // Determine if already approved
+      const selectText = row.querySelector('select')?.selectedOptions?.[0]?.text || 
+                         row.querySelector('[class*="singleValue"], .css-1i1tyke-singleValue')?.innerText || 
+                         row.querySelector('[class*="-control"]')?.innerText || '';
+      
+      const isApproved = /^approve[d]?$/i.test(selectText.trim());
+      return { index: idx + 1, rowNo, code, isApproved, currentText: selectText.trim() };
+    });
+
+    return {
+      totalRows: rows.length,
+      rows: rowDetails,
+      approvedCount: rowDetails.filter(r => r.isApproved).length,
+      pendingCount: rowDetails.filter(r => !r.isApproved).length
+    };
+  }
+
+  // =========================================================================
+  // --- Section 4: Task 1 - Tabular Dropdown Automation ---
+  // =========================================================================
+
+  /**
+   * Loops through data grid/table rows and changes dropdowns to "Approve".
+   * Supports 'ALL' or specific indices array.
+   */
+  async function approveTableItems(targetIndices = 'ALL') {
+    const targetRows = getActionableTableRows();
 
     if (targetRows.length === 0) {
       console.warn('[Data Entry Pro] No actionable table rows found in DOM.');
-      return { success: false, message: 'Action table rows not found', approvedCount: 0, totalTargeted: indices.length };
+      return { success: false, message: 'Action table rows not found', approvedCount: 0, totalTargeted: 0 };
     }
 
-    console.log(`[Data Entry Pro] Identified ${targetRows.length} data rows in table.`);
+    // Resolve target indices list (1-based)
+    let indicesToProcess = [];
+    if (targetIndices === 'ALL' || !Array.isArray(targetIndices) || targetIndices.length === 0) {
+      indicesToProcess = targetRows.map((_, i) => i + 1);
+    } else {
+      // Normalize to 1-based indexing
+      const minVal = Math.min(...targetIndices);
+      const isZeroBased = minVal === 0;
+      indicesToProcess = isZeroBased ? targetIndices.map(n => n + 1) : targetIndices;
+    }
 
-    // Determine 1-based vs 0-based indexing (e.g. user passing UI line numbers 3, 7, 8, 9)
-    const maxIndex = Math.max(...indices);
-    const minIndex = Math.min(...indices);
-    const isOneBased = minIndex >= 1 && maxIndex <= targetRows.length;
+    console.log(`[Data Entry Pro] Executing approvals on ${indicesToProcess.length} rows:`, indicesToProcess);
 
     let approvedCount = 0;
     const processedLog = [];
 
-    for (const rawIndex of indices) {
-      const rowIndex = isOneBased ? rawIndex - 1 : rawIndex;
+    for (const rowNum of indicesToProcess) {
+      const rowIndex = rowNum - 1;
       const row = targetRows[rowIndex];
 
       if (!row) {
-        console.warn(`[Data Entry Pro] Row at index ${rawIndex} (resolved: ${rowIndex}) does not exist.`);
-        processedLog.push({ index: rawIndex, status: 'row_not_found' });
+        console.warn(`[Data Entry Pro] Row #${rowNum} does not exist.`);
+        processedLog.push({ index: rowNum, status: 'row_not_found' });
         continue;
       }
 
@@ -209,39 +244,30 @@
             dispatchFrameworkValueChange(selectElem, opt.value);
             optionFound = true;
             approvedCount++;
-            processedLog.push({ index: rawIndex, type: 'standard_select', status: 'approved' });
-            console.log(`[Data Entry Pro] Standard <select> on row ${rawIndex} changed to '${text}'.`);
+            processedLog.push({ index: rowNum, type: 'standard_select', status: 'approved' });
+            console.log(`[Data Entry Pro] Standard <select> on row ${rowNum} changed to '${text}'.`);
             break;
           }
         }
-
         if (!optionFound) {
-          console.warn(`[Data Entry Pro] 'Approve' option not found in <select> on row ${rawIndex}.`);
-          processedLog.push({ index: rawIndex, status: 'option_not_found' });
+          processedLog.push({ index: rowNum, status: 'option_not_found' });
         }
         continue;
       }
 
-      // Case B: Custom React-Select / ARIA Combobox component
+      // Case B: React-Select / ARIA Combobox component
       const reactSelectControl = row.querySelector('[class*="-control"], [class*="react-select"], [role="combobox"], .css-1nxbv4n-control');
       const hiddenBackingInput = row.querySelector('input[name*="selecthidden"], input[id*="selecthidden"]');
 
       if (reactSelectControl) {
         try {
-          const currentText = (reactSelectControl.innerText || '').trim();
-          if (/^approve[d]?$/i.test(currentText)) {
-            approvedCount++;
-            processedLog.push({ index: rawIndex, type: 'react_select', status: 'already_approved' });
-            continue;
-          }
-
-          // Trigger dropdown open
+          // Open the dropdown menu
           reactSelectControl.scrollIntoView({ block: 'nearest', inline: 'nearest' });
           reactSelectControl.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
           reactSelectControl.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
 
-          // Micro-tick wait for dropdown menu portal rendering
-          await new Promise((res) => setTimeout(res, 60));
+          // Micro-tick wait for React-Select menu portal rendering
+          await new Promise((res) => setTimeout(res, 70));
 
           // Find dropdown option matching "Approve"
           const menuOptions = Array.from(document.querySelectorAll('[class*="-option"], [role="option"], .select-item, [id*="-option-"]'));
@@ -251,56 +277,54 @@
             approveOption.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
             approveOption.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
             approvedCount++;
-            processedLog.push({ index: rawIndex, type: 'react_select', status: 'approved' });
-            console.log(`[Data Entry Pro] Custom dropdown on row ${rawIndex} set to Approve via menu option click.`);
+            processedLog.push({ index: rowNum, type: 'react_select', status: 'approved' });
+            console.log(`[Data Entry Pro] Custom dropdown on row ${rowNum} set to Approve via menu option click.`);
           } else {
-            // Fallback: Type "Approve" + Enter into active combobox input
+            // Alternative: Type "Approve" + Enter into active combobox input
             const comboboxInput = reactSelectControl.querySelector('input[role="combobox"], input[type="text"]');
             if (comboboxInput) {
               comboboxInput.focus();
               dispatchFrameworkValueChange(comboboxInput, 'Approve');
               comboboxInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
               approvedCount++;
-              processedLog.push({ index: rawIndex, type: 'react_select_input', status: 'approved' });
+              processedLog.push({ index: rowNum, type: 'react_select_input', status: 'approved' });
+            } else {
+              // If already approved, count as verified
+              const currentText = (reactSelectControl.innerText || '').trim();
+              if (/^approve[d]?$/i.test(currentText)) {
+                approvedCount++;
+                processedLog.push({ index: rowNum, type: 'react_select', status: 'already_approved' });
+              }
             }
           }
 
-          // Update hidden backing input if present
           if (hiddenBackingInput) {
             dispatchFrameworkValueChange(hiddenBackingInput, 'Approve');
           }
         } catch (err) {
-          console.error(`[Data Entry Pro] Error setting custom dropdown on row ${rawIndex}:`, err);
-          processedLog.push({ index: rawIndex, status: 'error', error: err.message });
+          console.error(`[Data Entry Pro] Error setting custom dropdown on row ${rowNum}:`, err);
+          processedLog.push({ index: rowNum, status: 'error', error: err.message });
         }
       } else {
-        console.warn(`[Data Entry Pro] No recognized dropdown in row ${rawIndex}.`);
-        processedLog.push({ index: rawIndex, status: 'no_dropdown_element' });
+        processedLog.push({ index: rowNum, status: 'no_dropdown_element' });
       }
     }
 
     return {
-      success: true,
+      success: approvedCount > 0,
       approvedCount,
-      totalTargeted: indices.length,
+      totalTargeted: indicesToProcess.length,
       details: processedLog
     };
   }
 
   // =========================================================================
-  // --- Section 4: Task 2 - Standard 3-Row Medical Evaluation Checklist ---
+  // --- Section 5: Task 2 - Standard 3-Row Medical Evaluation Checklist ---
   // =========================================================================
 
-  /**
-   * Automatically locates and selects the "Yes" radio button for the 3 standard
-   * medical evaluation checklist rows at the bottom of the review form.
-   * 
-   * @returns {Object} result - Execution metrics and status
-   */
   function checkYesRadioButtons() {
     console.log('[Data Entry Pro] Starting checkYesRadioButtons for medical evaluation checklist.');
 
-    // Signatures for the 3 standard evaluation rows
     const checklistSignatures = [
       'diagnosis is supported by evidence',
       'case management is as per',
@@ -316,7 +340,6 @@
       return { success: false, message: 'No radio buttons found', checkedCount: 0, expected: 3 };
     }
 
-    // Strategy 1: Find container rows matching signature text
     const candidateContainers = Array.from(document.querySelectorAll('form, .row, fieldset, tr, .formgroup'));
     const matchedContainers = candidateContainers.filter(container => {
       const text = (container.innerText || container.textContent || '').toLowerCase();
@@ -324,14 +347,11 @@
     });
 
     if (matchedContainers.length > 0) {
-      console.log(`[Data Entry Pro] Found ${matchedContainers.length} checklist containers matching standard evaluation signatures.`);
-      
       matchedContainers.forEach((container, idx) => {
         const radios = Array.from(container.querySelectorAll('input[type="radio"]'));
         const yesRadio = radios.find(radio => {
           const val = (radio.value || '').trim().toLowerCase();
           const id = (radio.id || '').trim().toLowerCase();
-          
           let labelText = '';
           if (radio.id) {
             const labelEl = container.querySelector(`label[for="${radio.id}"]`) || document.querySelector(`label[for="${radio.id}"]`);
@@ -340,7 +360,6 @@
           if (!labelText && radio.parentElement) {
             labelText = (radio.parentElement.innerText || '').trim().toLowerCase();
           }
-
           return val === 'y' || val === 'yes' || val === 'true' || val === '1' ||
                  id === 'yes' || id.includes('yes') ||
                  labelText === 'yes' || labelText.startsWith('yes');
@@ -349,30 +368,22 @@
         if (yesRadio) {
           highlightElement(container);
           dispatchFrameworkRadioClick(yesRadio);
-          
-          // Also click associated label if custom styled radio overlay is in use
           if (yesRadio.id) {
             const labelEl = document.querySelector(`label[for="${yesRadio.id}"]`);
             if (labelEl) labelEl.click();
           }
-
           checkedCount++;
           checklistResults.push({ row: idx + 1, status: 'checked', id: yesRadio.id, name: yesRadio.name });
-          console.log(`[Data Entry Pro] Checklist Row #${idx + 1} 'Yes' radio activated.`);
         }
       });
     }
 
-    // Strategy 2 (Fallback): Target radio groups in the bottom form area
+    // Fallback: bottom 3 radio groups
     if (checkedCount === 0) {
-      console.log('[Data Entry Pro] Running fallback radio group matching...');
-      
       const radioGroups = new Map();
       allRadioInputs.forEach(radio => {
         const groupKey = radio.name || (radio.closest('form') ? radio.closest('form') : radio.parentElement);
-        if (!radioGroups.has(groupKey)) {
-          radioGroups.set(groupKey, []);
-        }
+        if (!radioGroups.has(groupKey)) radioGroups.set(groupKey, []);
         radioGroups.get(groupKey).push(radio);
       });
 
@@ -384,9 +395,7 @@
         });
       });
 
-      // Target exactly the 3 evaluation rows
       const targetGroups = relevantGroups.slice(-3);
-
       targetGroups.forEach((group, idx) => {
         const yesRadio = group.find(r => {
           const val = (r.value || '').toLowerCase();
@@ -416,24 +425,22 @@
   }
 
   // =========================================================================
-  // --- Section 5: Unified Trigger Runner & Extension Messaging ---
+  // --- Section 6: Unified Trigger Runner & Extension Messaging ---
   // =========================================================================
 
-  /**
-   * Unified runner executing both Tabular Dropdowns and Checklist Radio Tasks
-   */
   async function runDataEntryProAutomation(config = {}) {
+    // Mode 'ALL' or custom indices
     const targetIndices = config.indices && Array.isArray(config.indices) && config.indices.length > 0 
       ? config.indices 
-      : [3, 7, 8, 9];
+      : 'ALL';
 
-    console.log('[Data Entry Pro] === Initiating Unified Form Automation ===');
+    console.log('[Data Entry Pro v1.1] === Initiating Unified Form Automation ===');
     
     const tableResult = await approveTableItems(targetIndices);
     const radioResult = checkYesRadioButtons();
 
     const isSuccess = tableResult.success && radioResult.success;
-    const msg = `Approved ${tableResult.approvedCount}/${tableResult.totalTargeted} table rows and confirmed ${radioResult.checkedCount}/3 medical evaluation checklist items.`;
+    const msg = `Approved ${tableResult.approvedCount}/${tableResult.totalTargeted} table rows & selected "Yes" on ${radioResult.checkedCount}/3 medical checklist items.`;
     
     showOnScreenNotification('Automation Complete', msg, isSuccess);
 
@@ -444,30 +451,51 @@
       overallSuccess: isSuccess
     };
 
-    console.log('[Data Entry Pro] === Automation Complete ===', summary);
+    console.log('[Data Entry Pro v1.1] === Automation Finished ===', summary);
     return summary;
   }
 
-  // Expose global namespace for Console / DevTools invocation
+  // Expose global API
   window.DataEntryPro = {
+    scanTableInfo,
     approveTableItems,
     checkYesRadioButtons,
     runDataEntryProAutomation
   };
 
-  // Listen for messages from Popup UI or Background Shortcuts
+  // Message listener for Popup and Background
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'GET_TABLE_INFO') {
+      try {
+        const info = scanTableInfo();
+        sendResponse({ status: 'COMPLETED', info });
+      } catch (err) {
+        sendResponse({ status: 'ERROR', error: err.message });
+      }
+      return false;
+    }
+
     if (request.action === 'RUN_AUTOMATION') {
       runDataEntryProAutomation(request.config || {})
         .then(summary => sendResponse({ status: 'COMPLETED', summary }))
         .catch(error => sendResponse({ status: 'ERROR', error: error.message }));
-      return true; // Keep channel open for async response
+      return true;
     }
 
-    if (request.action === 'APPROVE_TABLE_ITEMS') {
+    if (request.action === 'APPROVE_ALL_ROWS') {
+      approveTableItems('ALL')
+        .then(result => {
+          showOnScreenNotification('Approve All Rows', `Approved ${result.approvedCount} of ${result.totalTargeted} rows.`, result.success);
+          sendResponse({ status: 'COMPLETED', result });
+        })
+        .catch(error => sendResponse({ status: 'ERROR', error: error.message }));
+      return true;
+    }
+
+    if (request.action === 'APPROVE_CUSTOM_ROWS') {
       approveTableItems(request.indices || [])
         .then(result => {
-          showOnScreenNotification('Table Dropdowns', `Approved ${result.approvedCount} of ${result.totalTargeted} rows.`, true);
+          showOnScreenNotification('Custom Rows Approval', `Approved ${result.approvedCount} of ${result.totalTargeted} rows.`, result.success);
           sendResponse({ status: 'COMPLETED', result });
         })
         .catch(error => sendResponse({ status: 'ERROR', error: error.message }));
@@ -486,5 +514,5 @@
     }
   });
 
-  console.log('[Data Entry Pro] Content script initialized and ready.');
+  console.log('[Data Entry Pro v1.1] Content script ready & table scanner initialized.');
 })();

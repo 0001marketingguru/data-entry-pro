@@ -3,14 +3,15 @@
   --card-bg: #1e293b;
   --text-main: #f8fafc;
   --text-muted: #94a3b8;
-  --primary: #3b82f6;
-  --primary-hover: #2563eb;
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --primary-glow: rgba(37, 99, 235, 0.35);
   --secondary-bg: #334155;
   --secondary-hover: #475569;
   --success-bg: #064e3b;
+  --success-border: #059669;
   --success-text: #34d399;
   --border: #334155;
-  --radius: 10px;
   --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
@@ -21,7 +22,7 @@
 }
 
 body {
-  width: 340px;
+  width: 350px;
   background-color: var(--bg-color);
   color: var(--text-main);
   font-family: var(--font);
@@ -33,7 +34,7 @@ body {
 .app-card {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
 }
 
 .header {
@@ -51,10 +52,10 @@ body {
 }
 
 .logo-icon {
-  font-size: 18px;
-  background: #2563eb33;
+  font-size: 17px;
+  background: var(--primary-glow);
   color: #60a5fa;
-  padding: 4px 8px;
+  padding: 4px 7px;
   border-radius: 8px;
 }
 
@@ -81,37 +82,33 @@ body {
   border-radius: 6px;
 }
 
-.section {
+/* Detection Banner */
+.detection-banner {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.label {
-  font-size: 12px;
-  font-weight: 600;
-  color: #cbd5e1;
-}
-
-.input-container input {
-  width: 100%;
+  align-items: center;
+  gap: 8px;
+  background-color: #1e293b;
+  border: 1px solid #3b82f6;
+  border-radius: 8px;
   padding: 8px 12px;
-  background-color: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: #fff;
-  font-size: 13px;
-  outline: none;
-  transition: border-color 0.2s;
+  font-size: 12px;
+  font-weight: 500;
+  color: #e2e8f0;
 }
 
-.input-container input:focus {
-  border-color: var(--primary);
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #38bdf8;
+  box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.7);
+  animation: pulse 1.8s infinite;
 }
 
-.hint {
-  font-size: 11px;
-  color: var(--text-muted);
+@keyframes pulse {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(56, 189, 248, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); }
 }
 
 .action-stack {
@@ -131,7 +128,7 @@ body {
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  transition: background-color 0.15s, transform 0.05s;
+  transition: all 0.15s ease;
 }
 
 .btn:active {
@@ -141,12 +138,18 @@ body {
 .btn-primary {
   background-color: var(--primary);
   color: #ffffff;
-  padding: 10px 14px;
+  padding: 11px 14px;
   font-size: 13px;
+  box-shadow: 0 4px 14px var(--primary-glow);
 }
 
 .btn-primary:hover {
   background-color: var(--primary-hover);
+}
+
+.btn-sm {
+  padding: 7px 12px;
+  font-size: 12px;
 }
 
 .btn-group {
@@ -164,6 +167,72 @@ body {
   background-color: var(--secondary-hover);
 }
 
+/* Collapsible Custom Drawer */
+.custom-details {
+  background-color: #1e293b;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.custom-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #94a3b8;
+  cursor: pointer;
+  user-select: none;
+}
+
+.custom-summary:hover {
+  color: #cbd5e1;
+}
+
+.summary-arrow {
+  transition: transform 0.2s;
+}
+
+details[open] .summary-arrow {
+  transform: rotate(180deg);
+}
+
+.custom-body {
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.input-container {
+  display: flex;
+  gap: 6px;
+}
+
+.input-container input {
+  flex: 1;
+  padding: 7px 10px;
+  background-color: #0f172a;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 12px;
+  outline: none;
+}
+
+.input-container input:focus {
+  border-color: var(--primary);
+}
+
+.hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* Status Box */
 .status-box {
   background-color: var(--card-bg);
   border: 1px solid var(--border);
@@ -179,8 +248,8 @@ body {
 }
 
 .status-box.success {
-  background-color: #064e3b22;
-  border-color: #059669;
+  background-color: rgba(6, 78, 59, 0.35);
+  border-color: var(--success-border);
 }
 
 .status-header {
@@ -199,7 +268,7 @@ body {
 }
 
 .status-box.success .status-indicator {
-  background-color: #34d399;
+  background-color: var(--success-text);
 }
 
 .status-body {

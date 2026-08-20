@@ -7,19 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased] - Planned
+## [1.1.0] - 2026-08-20
 
-### [3.0.0] - Enterprise Batching & AI Assist
-- Patient Worklist queue auto-advancement.
-- Remote policy & rule synchronization via cloud config.
-- Contextual AI clinical justification generator in Remarks.
-- Snapshot state capture with one-click undo.
-
-### [2.0.0] - Smart Presets, Remarks & Audit Logging
-- Smart Table Scanner (auto-detect by package code prefix, price, or document status).
-- Remarks auto-fill library with customizable clinical justification templates.
-- Safety preview mode before committing changes.
-- Local audit log tracking with CSV/JSON export.
+### Added
+- **Dynamic Table Scanner (`scanTableInfo`)**: Automatically counts total actionable claim rows and detects individual row statuses on any page without hardcoded bounds.
+- **Style A Single Quick-Action Button**: Prominent `⚡ Approve All N Rows & Checklist` button dynamically labeled with the detected row count.
+- **Unconditional Batch Approval (Option A & B)**: One-click approval of all detected rows across diverse form layouts.
+- **Live Detection Banner**: Visual status badge displaying row counts (e.g. `5 Claim Rows Found (1 approved, 4 pending)`).
+- **Collapsible Custom Indices Drawer**: Optional dropdown input for targeted index overrides when needed.
 
 ---
 
