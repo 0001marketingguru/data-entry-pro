@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Data Entry Pro - Claims Automation",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Enterprise-grade UI automation for medical review and claims evaluation portals.",
   "icons": {
     "16": "icons/icon16.png",
@@ -20,7 +20,7 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Data Entry Pro v1.1",
+    "default_title": "Data Entry Pro v1.1.1",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
@@ -44,8 +44,8 @@
   "commands": {
     "trigger_automation": {
       "suggested_key": {
-        "default": "Alt+Shift+A",
-        "mac": "Alt+Shift+A"
+        "default": "Alt+Shift+D",
+        "mac": "Alt+Shift+D"
       },
       "description": "Run Data Entry Pro (Approve All Rows & Checklist)"
     }

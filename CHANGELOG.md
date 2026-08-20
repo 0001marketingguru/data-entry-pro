@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.1] - 2026-08-20
+
+### Changed
+- **Updated Global Shortcut**: Changed default shortcut to <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>D</kbd> to prevent conflict with browser tab switching shortcuts.
+- **Action Column Dropdown Resolver**: Added exact column index and text matching for the PMJAY `Action` column (`Approve` / `Query` / `Reject`).
+
+---
+
 ## [1.1.0] - 2026-08-20
 
 ### Added
@@ -28,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Custom Dropdown Support**: Full compatibility with both native HTML `<select>` and custom React-Select / ARIA combobox implementations.
 - **Multi-Trigger Modalities**:
   - Dark-mode Extension Popup with customizable indices input.
-  - Global Keyboard Shortcut: `Alt + Shift + A`.
+  - Global Keyboard Shortcut.
   - Console API: `window.DataEntryPro`.
 - **Visual Feedback**: Non-intrusive on-screen floating toast notification and soft green row highlight pulses.
 - **Extension Assets**: 16px, 48px, 128px high-resolution icons.
