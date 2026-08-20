@@ -1,7 +1,8 @@
 /**
- * Data Entry Pro v1.1.0 - Enterprise Claims UI Automation Content Script
+ * Data Entry Pro v1.1.2 - Enterprise Claims UI Automation Content Script
  * 
  * Specifically optimized for PMJAY Payer "Actionable details" table:
+ * - Disambiguates between static summary table and interactive Actionable Grid
  * - Targets Action column dropdowns (Approve / Query / Reject)
  * - Automatically switches "Query", "Select", or "Reject" to "Approve"
  * - Selects "Yes" on all 3 standard medical evaluation checklist rows
@@ -118,7 +119,7 @@
   // =========================================================================
 
   /**
-   * Finds the Actionable Details table and returns its rows along with the Action column index
+   * Disambiguates between static read-only tables and the interactive Actionable Details Grid
    */
   function getActionableTableContext() {
     const candidateTables = Array.from(document.querySelectorAll('table'));
@@ -126,45 +127,40 @@
     let actionColIndex = -1;
     let targetRows = [];
 
+    // Priority 1: Table containing interactive React-Select or select elements
     for (const table of candidateTables) {
-      const ths = Array.from(table.querySelectorAll('thead th, th'));
-      const text = table.innerText;
-      
-      const hasActionHeader = ths.some((th, idx) => {
-        const thText = (th.innerText || th.textContent || '').trim().toLowerCase();
-        if (thText === 'action' || thText.includes('action')) {
-          actionColIndex = idx;
-          return true;
-        }
-        return false;
-      });
+      const hasInteractiveControls = table.querySelector('.css-1nxbv4n-control, [class*="-control"], [class*="react-select"], select, [role="combobox"]');
+      if (hasInteractiveControls) {
+        const ths = Array.from(table.querySelectorAll('thead th, th'));
+        ths.forEach((th, idx) => {
+          const thText = (th.innerText || th.textContent || '').trim().toLowerCase();
+          if (thText === 'action' || thText.includes('action')) {
+            actionColIndex = idx;
+          }
+        });
 
-      const isActionableGrid = text.includes('Package Code') || text.includes('Procedure Code') || text.includes('ICHI Code');
-
-      if (isActionableGrid && (hasActionHeader || table.querySelector('select, [class*="react-select"], [class*="-control"]'))) {
         targetTable = table;
         targetRows = Array.from(table.querySelectorAll('tbody tr')).filter(r => !r.closest('thead') && r.querySelectorAll('td').length >= 4);
         break;
       }
     }
 
-    // Fallback: search by section heading "Actionable details"
+    // Priority 2: Search under "Actionable details" section container
     if (targetRows.length === 0) {
       const headings = Array.from(document.querySelectorAll('div, h2, h3, h4, span, p'));
       const actionHeading = headings.find(el => el.textContent.trim().toLowerCase() === 'actionable details');
       if (actionHeading) {
-        const section = actionHeading.closest('.row, .col-lg-12, div');
-        if (section) {
-          const rows = Array.from(section.querySelectorAll('tbody tr, tr')).filter(r => !r.closest('thead') && r.querySelectorAll('td').length >= 4);
+        const section = actionHeading.closest('.row, .col-lg-12, div')?.parentElement || actionHeading.parentElement;
+        const tables = Array.from(section?.querySelectorAll('table') || []);
+        for (const t of tables) {
+          const rows = Array.from(t.querySelectorAll('tbody tr, tr')).filter(r => !r.closest('thead') && r.querySelectorAll('td').length >= 4);
           if (rows.length > 0) {
+            targetTable = t;
             targetRows = rows;
+            break;
           }
         }
       }
-    }
-
-    if (targetRows.length === 0) {
-      targetRows = Array.from(document.querySelectorAll('table tbody tr')).filter(r => !r.closest('thead') && r.querySelectorAll('td').length >= 5);
     }
 
     return {
@@ -226,7 +222,6 @@
     const { rows: targetRows, actionColIndex } = getActionableTableContext();
 
     if (targetRows.length === 0) {
-      console.warn('[Data Entry Pro] No actionable table rows found in DOM.');
       return { success: false, message: 'Action table rows not found', approvedCount: 0, totalTargeted: 0 };
     }
 
@@ -238,8 +233,6 @@
       const minVal = Math.min(...targetIndices);
       indicesToProcess = minVal === 0 ? targetIndices.map(n => n + 1) : targetIndices;
     }
-
-    console.log(`[Data Entry Pro] Approving ${indicesToProcess.length} rows in Action column:`, indicesToProcess);
 
     let approvedCount = 0;
     const processedLog = [];
@@ -262,7 +255,6 @@
         actionCell = tds.find(td => td.querySelector('select, [class*="-control"], [class*="react-select"], [role="combobox"]')) || row;
       }
 
-      // Check current value
       const currentLabel = (actionCell.querySelector('[class*="singleValue"], .css-1i1tyke-singleValue, select')?.innerText || actionCell.innerText || '').trim();
 
       // Case A: Standard HTML <select>
@@ -286,7 +278,7 @@
         if (optionFound) continue;
       }
 
-      // Case B: React-Select (Approve / Query / Reject dropdown as shown in screenshot)
+      // Case B: React-Select (Approve / Query / Reject dropdown)
       const reactSelectControl = actionCell.querySelector('[class*="-control"], [class*="react-select"], [role="combobox"], .css-1nxbv4n-control') || 
                                  row.querySelector('[class*="-control"], [class*="react-select"], [role="combobox"], .css-1nxbv4n-control');
       const hiddenBackingInput = actionCell.querySelector('input[name*="selecthidden"], input[id*="selecthidden"]') || row.querySelector('input[name*="selecthidden"]');
@@ -313,9 +305,7 @@
             approveOption.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
             approvedCount++;
             processedLog.push({ index: rowNum, type: 'react_select', status: 'approved' });
-            console.log(`[Data Entry Pro] Row #${rowNum} Action changed to 'Approve'.`);
           } else {
-            // Alternative: Type "Approve" into the combobox input
             const comboboxInput = reactSelectControl.querySelector('input[role="combobox"], input[type="text"]');
             if (comboboxInput) {
               comboboxInput.focus();
@@ -333,7 +323,6 @@
             dispatchFrameworkValueChange(hiddenBackingInput, 'Approve');
           }
         } catch (err) {
-          console.error(`[Data Entry Pro] Error updating Action on row ${rowNum}:`, err);
           processedLog.push({ index: rowNum, status: 'error', error: err.message });
         }
       } else {
@@ -354,8 +343,6 @@
   // =========================================================================
 
   function checkYesRadioButtons() {
-    console.log('[Data Entry Pro] Starting checkYesRadioButtons for medical evaluation checklist.');
-
     const checklistSignatures = [
       'diagnosis is supported by evidence',
       'case management is as per',
@@ -463,8 +450,6 @@
       ? config.indices 
       : 'ALL';
 
-    console.log('[Data Entry Pro v1.1] === Initiating Unified Form Automation ===');
-    
     const tableResult = await approveTableItems(targetIndices);
     const radioResult = checkYesRadioButtons();
 
@@ -480,7 +465,6 @@
       overallSuccess: isSuccess
     };
 
-    console.log('[Data Entry Pro v1.1] === Automation Finished ===', summary);
     return summary;
   }
 
@@ -542,6 +526,4 @@
       return false;
     }
   });
-
-  console.log('[Data Entry Pro v1.1] Content script ready & Action dropdown handler initialized.');
 })();
