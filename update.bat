@@ -45,12 +45,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "$now = [DateTimeOffset]:
 
 echo.
 echo ===================================================================
-echo   [SUCCESS] DATA ENTRY PRO UPDATED & AUTO-RELOADED IN CHROME!
+echo   [SUCCESS] DATA ENTRY PRO UPDATED AND AUTO-RELOADED IN CHROME!
 echo ===================================================================
 echo.
-echo   * Files Updated: 100%% Clean (origin/main)
+echo   * Files Updated: 100 percent Clean (origin/main)
 echo   * Safety Backup: Saved in backups/ folder
 echo   * Chrome Status: Auto-Reloaded in Background (ZERO clicks needed!)
 echo.
 echo ===================================================================
-timeout /t 3
+pause
