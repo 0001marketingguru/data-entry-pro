@@ -1,12 +1,11 @@
 /**
  * Data Entry Pro v1.1.0 - Enterprise Claims UI Automation Content Script
  * 
- * Features:
- * 1. Dynamic Table Scanner (Auto-detects total row count & claim codes on any form)
- * 2. "Approve All" Unconditional Batch Processing (Option A & B applied)
- * 3. Standard 3-Row Medical Evaluation Checklist (setting "Yes" radio buttons)
- * 4. Reactive Framework Event Hooks (React synthetic tracker bypass, Angular, Vue)
- * 5. On-Screen Feedback & Visual Pulse Highlighting
+ * Specifically optimized for PMJAY Payer "Actionable details" table:
+ * - Targets Action column dropdowns (Approve / Query / Reject)
+ * - Automatically switches "Query", "Select", or "Reject" to "Approve"
+ * - Selects "Yes" on all 3 standard medical evaluation checklist rows
+ * - Dispatches React prototype events for controlled state sync
  */
 
 (function () {
@@ -31,7 +30,7 @@
       color: #ffffff;
       padding: 12px 18px;
       border-radius: 8px;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+      box-shadow: 0 10px 25px rgba(0,0,0,0.35);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       font-size: 13px;
       line-height: 1.4;
@@ -64,11 +63,11 @@
     const prevTransition = el.style.transition;
     const prevBg = el.style.backgroundColor;
     el.style.transition = 'background-color 0.4s ease';
-    el.style.backgroundColor = 'rgba(16, 185, 129, 0.18)';
+    el.style.backgroundColor = 'rgba(16, 185, 129, 0.22)';
     setTimeout(() => {
       el.style.backgroundColor = prevBg;
       el.style.transition = prevTransition;
-    }, 2000);
+    }, 2200);
   }
 
   // =========================================================================
@@ -115,67 +114,97 @@
   }
 
   // =========================================================================
-  // --- Section 3: Dynamic Table Inspector & Finder ---
+  // --- Section 3: Semantic Table & Action Column Finder ---
   // =========================================================================
 
   /**
-   * Disambiguates and locates the actionable claim rows in the portal
+   * Finds the Actionable Details table and returns its rows along with the Action column index
    */
-  function getActionableTableRows() {
+  function getActionableTableContext() {
     const candidateTables = Array.from(document.querySelectorAll('table'));
+    let targetTable = null;
+    let actionColIndex = -1;
     let targetRows = [];
 
     for (const table of candidateTables) {
-      const rows = Array.from(table.querySelectorAll('tbody tr'));
-      if (rows.length > 0) {
-        const text = table.innerText;
-        const hasActionHeaders = text.includes('Action') && 
-                                (text.includes('Package Code') || text.includes('Procedure Code') || text.includes('ICHI'));
-        if (hasActionHeaders || rows.some(r => r.querySelector('select, [class*="react-select"], [class*="-control"], .css-1nxbv4n-control'))) {
-          targetRows = rows;
-          break;
+      const ths = Array.from(table.querySelectorAll('thead th, th'));
+      const text = table.innerText;
+      
+      const hasActionHeader = ths.some((th, idx) => {
+        const thText = (th.innerText || th.textContent || '').trim().toLowerCase();
+        if (thText === 'action' || thText.includes('action')) {
+          actionColIndex = idx;
+          return true;
         }
+        return false;
+      });
+
+      const isActionableGrid = text.includes('Package Code') || text.includes('Procedure Code') || text.includes('ICHI Code');
+
+      if (isActionableGrid && (hasActionHeader || table.querySelector('select, [class*="react-select"], [class*="-control"]'))) {
+        targetTable = table;
+        targetRows = Array.from(table.querySelectorAll('tbody tr')).filter(r => !r.closest('thead') && r.querySelectorAll('td').length >= 4);
+        break;
       }
     }
 
+    // Fallback: search by section heading "Actionable details"
     if (targetRows.length === 0) {
-      // Look for container rows under "Actionable details" header
-      const actionableHeading = Array.from(document.querySelectorAll('div, h2, h3, h4, span'))
-        .find(el => el.textContent.trim().toLowerCase() === 'actionable details');
-      if (actionableHeading) {
-        const section = actionableHeading.closest('.row, .col-lg-12, div');
+      const headings = Array.from(document.querySelectorAll('div, h2, h3, h4, span, p'));
+      const actionHeading = headings.find(el => el.textContent.trim().toLowerCase() === 'actionable details');
+      if (actionHeading) {
+        const section = actionHeading.closest('.row, .col-lg-12, div');
         if (section) {
           const rows = Array.from(section.querySelectorAll('tbody tr, tr')).filter(r => !r.closest('thead') && r.querySelectorAll('td').length >= 4);
-          if (rows.length > 0) targetRows = rows;
+          if (rows.length > 0) {
+            targetRows = rows;
+          }
         }
       }
     }
 
     if (targetRows.length === 0) {
-      targetRows = Array.from(document.querySelectorAll('table tbody tr'))
-        .filter(r => !r.closest('thead') && r.querySelectorAll('td').length >= 5);
+      targetRows = Array.from(document.querySelectorAll('table tbody tr')).filter(r => !r.closest('thead') && r.querySelectorAll('td').length >= 5);
     }
 
-    return targetRows;
+    return {
+      table: targetTable,
+      actionColIndex,
+      rows: targetRows
+    };
   }
 
   /**
-   * Scans the page to extract metadata on how many rows exist and their status
+   * Scans table to return row details, codes (e.g. LB142, RI020), and current action status
    */
   function scanTableInfo() {
-    const rows = getActionableTableRows();
+    const { rows, actionColIndex } = getActionableTableContext();
+    
     const rowDetails = rows.map((row, idx) => {
       const tds = Array.from(row.querySelectorAll('td'));
       const rowNo = tds[0]?.innerText?.trim() || `${idx + 1}`;
       const code = tds[1]?.innerText?.trim() || `Item ${idx + 1}`;
       
-      // Determine if already approved
-      const selectText = row.querySelector('select')?.selectedOptions?.[0]?.text || 
-                         row.querySelector('[class*="singleValue"], .css-1i1tyke-singleValue')?.innerText || 
-                         row.querySelector('[class*="-control"]')?.innerText || '';
+      // Determine Action cell
+      let actionCell = actionColIndex >= 0 && tds[actionColIndex] ? tds[actionColIndex] : null;
+      if (!actionCell) {
+        actionCell = tds.find(td => td.querySelector('select, [class*="-control"], [class*="react-select"], [role="combobox"]')) || tds[tds.length - 4];
+      }
+
+      const selectText = actionCell?.querySelector('select')?.selectedOptions?.[0]?.text || 
+                         actionCell?.querySelector('[class*="singleValue"], .css-1i1tyke-singleValue')?.innerText || 
+                         actionCell?.querySelector('[class*="-control"]')?.innerText || '';
       
-      const isApproved = /^approve[d]?$/i.test(selectText.trim());
-      return { index: idx + 1, rowNo, code, isApproved, currentText: selectText.trim() };
+      const cleanText = selectText.trim();
+      const isApproved = /^approve[d]?$/i.test(cleanText);
+
+      return {
+        index: idx + 1,
+        rowNo,
+        code,
+        isApproved,
+        currentAction: cleanText || 'Select'
+      };
     });
 
     return {
@@ -187,33 +216,30 @@
   }
 
   // =========================================================================
-  // --- Section 4: Task 1 - Tabular Dropdown Automation ---
+  // --- Section 4: Task 1 - Set Action Dropdown to "Approve" ---
   // =========================================================================
 
   /**
-   * Loops through data grid/table rows and changes dropdowns to "Approve".
-   * Supports 'ALL' or specific indices array.
+   * Targets the Action dropdown in each row and changes "Query", "Select", or "Reject" to "Approve"
    */
   async function approveTableItems(targetIndices = 'ALL') {
-    const targetRows = getActionableTableRows();
+    const { rows: targetRows, actionColIndex } = getActionableTableContext();
 
     if (targetRows.length === 0) {
       console.warn('[Data Entry Pro] No actionable table rows found in DOM.');
       return { success: false, message: 'Action table rows not found', approvedCount: 0, totalTargeted: 0 };
     }
 
-    // Resolve target indices list (1-based)
+    // Determine target list (1-based indices)
     let indicesToProcess = [];
     if (targetIndices === 'ALL' || !Array.isArray(targetIndices) || targetIndices.length === 0) {
       indicesToProcess = targetRows.map((_, i) => i + 1);
     } else {
-      // Normalize to 1-based indexing
       const minVal = Math.min(...targetIndices);
-      const isZeroBased = minVal === 0;
-      indicesToProcess = isZeroBased ? targetIndices.map(n => n + 1) : targetIndices;
+      indicesToProcess = minVal === 0 ? targetIndices.map(n => n + 1) : targetIndices;
     }
 
-    console.log(`[Data Entry Pro] Executing approvals on ${indicesToProcess.length} rows:`, indicesToProcess);
+    console.log(`[Data Entry Pro] Approving ${indicesToProcess.length} rows in Action column:`, indicesToProcess);
 
     let approvedCount = 0;
     const processedLog = [];
@@ -223,15 +249,24 @@
       const row = targetRows[rowIndex];
 
       if (!row) {
-        console.warn(`[Data Entry Pro] Row #${rowNum} does not exist.`);
         processedLog.push({ index: rowNum, status: 'row_not_found' });
         continue;
       }
 
       highlightElement(row);
+      const tds = Array.from(row.querySelectorAll('td'));
 
-      // Case A: Standard HTML <select> element
-      const selectElem = row.querySelector('select');
+      // Locate the Action cell specifically
+      let actionCell = actionColIndex >= 0 && tds[actionColIndex] ? tds[actionColIndex] : null;
+      if (!actionCell) {
+        actionCell = tds.find(td => td.querySelector('select, [class*="-control"], [class*="react-select"], [role="combobox"]')) || row;
+      }
+
+      // Check current value
+      const currentLabel = (actionCell.querySelector('[class*="singleValue"], .css-1i1tyke-singleValue, select')?.innerText || actionCell.innerText || '').trim();
+
+      // Case A: Standard HTML <select>
+      const selectElem = actionCell.querySelector('select') || row.querySelector('select');
       if (selectElem) {
         let optionFound = false;
         for (let i = 0; i < selectElem.options.length; i++) {
@@ -245,42 +280,42 @@
             optionFound = true;
             approvedCount++;
             processedLog.push({ index: rowNum, type: 'standard_select', status: 'approved' });
-            console.log(`[Data Entry Pro] Standard <select> on row ${rowNum} changed to '${text}'.`);
             break;
           }
         }
-        if (!optionFound) {
-          processedLog.push({ index: rowNum, status: 'option_not_found' });
-        }
-        continue;
+        if (optionFound) continue;
       }
 
-      // Case B: React-Select / ARIA Combobox component
-      const reactSelectControl = row.querySelector('[class*="-control"], [class*="react-select"], [role="combobox"], .css-1nxbv4n-control');
-      const hiddenBackingInput = row.querySelector('input[name*="selecthidden"], input[id*="selecthidden"]');
+      // Case B: React-Select (Approve / Query / Reject dropdown as shown in screenshot)
+      const reactSelectControl = actionCell.querySelector('[class*="-control"], [class*="react-select"], [role="combobox"], .css-1nxbv4n-control') || 
+                                 row.querySelector('[class*="-control"], [class*="react-select"], [role="combobox"], .css-1nxbv4n-control');
+      const hiddenBackingInput = actionCell.querySelector('input[name*="selecthidden"], input[id*="selecthidden"]') || row.querySelector('input[name*="selecthidden"]');
 
       if (reactSelectControl) {
         try {
-          // Open the dropdown menu
+          // Open dropdown menu
           reactSelectControl.scrollIntoView({ block: 'nearest', inline: 'nearest' });
           reactSelectControl.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
           reactSelectControl.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
 
-          // Micro-tick wait for React-Select menu portal rendering
-          await new Promise((res) => setTimeout(res, 70));
+          // Wait micro-tick for React menu portal to mount
+          await new Promise((res) => setTimeout(res, 80));
 
-          // Find dropdown option matching "Approve"
-          const menuOptions = Array.from(document.querySelectorAll('[class*="-option"], [role="option"], .select-item, [id*="-option-"]'));
-          const approveOption = menuOptions.find(opt => /^approve[d]?$/i.test((opt.innerText || opt.textContent || '').trim()));
+          // Look for "Approve" option in the document portal / menu
+          const menuOptions = Array.from(document.querySelectorAll('[class*="-option"], [role="option"], .select-item, [id*="-option-"], div'));
+          const approveOption = menuOptions.find(opt => {
+            const t = (opt.innerText || opt.textContent || '').trim().toLowerCase();
+            return t === 'approve' || t === 'approved';
+          });
 
           if (approveOption) {
             approveOption.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
             approveOption.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
             approvedCount++;
             processedLog.push({ index: rowNum, type: 'react_select', status: 'approved' });
-            console.log(`[Data Entry Pro] Custom dropdown on row ${rowNum} set to Approve via menu option click.`);
+            console.log(`[Data Entry Pro] Row #${rowNum} Action changed to 'Approve'.`);
           } else {
-            // Alternative: Type "Approve" + Enter into active combobox input
+            // Alternative: Type "Approve" into the combobox input
             const comboboxInput = reactSelectControl.querySelector('input[role="combobox"], input[type="text"]');
             if (comboboxInput) {
               comboboxInput.focus();
@@ -288,13 +323,9 @@
               comboboxInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
               approvedCount++;
               processedLog.push({ index: rowNum, type: 'react_select_input', status: 'approved' });
-            } else {
-              // If already approved, count as verified
-              const currentText = (reactSelectControl.innerText || '').trim();
-              if (/^approve[d]?$/i.test(currentText)) {
-                approvedCount++;
-                processedLog.push({ index: rowNum, type: 'react_select', status: 'already_approved' });
-              }
+            } else if (/^approve[d]?$/i.test(currentLabel)) {
+              approvedCount++;
+              processedLog.push({ index: rowNum, type: 'react_select', status: 'already_approved' });
             }
           }
 
@@ -302,7 +333,7 @@
             dispatchFrameworkValueChange(hiddenBackingInput, 'Approve');
           }
         } catch (err) {
-          console.error(`[Data Entry Pro] Error setting custom dropdown on row ${rowNum}:`, err);
+          console.error(`[Data Entry Pro] Error updating Action on row ${rowNum}:`, err);
           processedLog.push({ index: rowNum, status: 'error', error: err.message });
         }
       } else {
@@ -336,7 +367,6 @@
     const allRadioInputs = Array.from(document.querySelectorAll('input[type="radio"]'));
 
     if (allRadioInputs.length === 0) {
-      console.warn('[Data Entry Pro] No radio buttons found on page.');
       return { success: false, message: 'No radio buttons found', checkedCount: 0, expected: 3 };
     }
 
@@ -378,7 +408,7 @@
       });
     }
 
-    // Fallback: bottom 3 radio groups
+    // Fallback: bottom 3 radio sets
     if (checkedCount === 0) {
       const radioGroups = new Map();
       allRadioInputs.forEach(radio => {
@@ -429,7 +459,6 @@
   // =========================================================================
 
   async function runDataEntryProAutomation(config = {}) {
-    // Mode 'ALL' or custom indices
     const targetIndices = config.indices && Array.isArray(config.indices) && config.indices.length > 0 
       ? config.indices 
       : 'ALL';
@@ -455,7 +484,7 @@
     return summary;
   }
 
-  // Expose global API
+  // Global API
   window.DataEntryPro = {
     scanTableInfo,
     approveTableItems,
@@ -463,7 +492,7 @@
     runDataEntryProAutomation
   };
 
-  // Message listener for Popup and Background
+  // Message listener
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'GET_TABLE_INFO') {
       try {
@@ -514,5 +543,5 @@
     }
   });
 
-  console.log('[Data Entry Pro v1.1] Content script ready & table scanner initialized.');
+  console.log('[Data Entry Pro v1.1] Content script ready & Action dropdown handler initialized.');
 })();
