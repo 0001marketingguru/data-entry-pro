@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Data Entry Pro v1.1.3</title>
+  <title>Data Entry Pro v1.1.4</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
@@ -17,8 +17,17 @@
           <span class="subtitle">Claims Form Automation</span>
         </div>
       </div>
-      <span class="badge">v1.1.3</span>
+      <span class="badge" id="versionBadge">v1.1.4</span>
     </header>
+
+    <!-- Live GitHub Update Available Banner -->
+    <div id="updateBanner" class="update-banner hidden">
+      <div class="update-info">
+        <span class="update-icon">🔔</span>
+        <span id="updateText">New version available!</span>
+      </div>
+      <a id="updateLink" href="https://github.com/0001marketingguru/data-entry-pro/releases" target="_blank" class="update-action">View Release</a>
+    </div>
 
     <!-- Live Table Detection Banner -->
     <div id="detectionBox" class="detection-banner">

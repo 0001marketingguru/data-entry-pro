@@ -1,8 +1,14 @@
-// Data Entry Pro v1.1.3 - Popup Controller
+// Data Entry Pro v1.1.4 - Popup Controller with Live GitHub Update Checker
 
 document.addEventListener('DOMContentLoaded', async () => {
+  const CURRENT_VERSION = 'v1.1.4';
+  const GITHUB_REPO = '0001marketingguru/data-entry-pro';
+
   const detectionBox = document.getElementById('detectionBox');
   const detectionText = document.getElementById('detectionText');
+  const updateBanner = document.getElementById('updateBanner');
+  const updateText = document.getElementById('updateText');
+  const updateLink = document.getElementById('updateLink');
   const approveAllUnifiedBtn = document.getElementById('approveAllUnifiedBtn');
   const approveAllUnifiedLabel = document.getElementById('approveAllUnifiedLabel');
   const approveTableOnlyBtn = document.getElementById('approveTableOnlyBtn');
@@ -37,7 +43,29 @@ document.addEventListener('DOMContentLoaded', async () => {
       .filter(n => !isNaN(n) && n > 0);
   }
 
-  // 1. Initial Page Scan: Query active tab for table info
+  // 1. Live GitHub Version Checker (Recommendation 2)
+  async function checkForUpdates() {
+    try {
+      const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, {
+        headers: { 'Accept': 'application/vnd.github.v3+json' }
+      });
+      if (!res.ok) return;
+
+      const data = await res.json();
+      const latestTag = data.tag_name; // e.g. "v1.1.4" or "v1.2.0"
+
+      if (latestTag && latestTag !== CURRENT_VERSION) {
+        updateText.textContent = `New Update ${latestTag} Available!`;
+        updateLink.href = data.html_url || `https://github.com/${GITHUB_REPO}/releases`;
+        updateBanner.classList.remove('hidden');
+      }
+    } catch (e) {
+      console.debug('[Data Entry Pro] Update check skipped (offline/rate limit).');
+    }
+  }
+  checkForUpdates();
+
+  // 2. Initial Page Scan: Query active tab for table info
   const tabId = await getActiveTabId();
   if (tabId) {
     chrome.tabs.sendMessage(tabId, { action: 'GET_TABLE_INFO' }, (res) => {
@@ -60,7 +88,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // 2. Approve ALL Unified (Table + Checklist)
+  // 3. Approve ALL Unified (Table + Checklist)
   approveAllUnifiedBtn.addEventListener('click', async () => {
     const activeTabId = await getActiveTabId();
     if (!activeTabId) {
@@ -83,8 +111,6 @@ document.addEventListener('DOMContentLoaded', async () => {
           <strong>Checklist:</strong> Selected "Yes" on <strong>${radioResult.checkedCount} of ${radioResult.expected}</strong> evaluation items.
         `;
         showStatus('Batch Execution Finished', msg, tableResult.success);
-        
-        // Refresh table info
         detectionText.innerHTML = `<strong>${tableResult.approvedCount}/${tableResult.totalTargeted} Rows Approved ✅</strong>`;
       } else {
         showStatus('Error', res?.error || 'Unknown error occurred.', false);
@@ -92,7 +118,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // 3. Approve Table Only
+  // 4. Approve Table Only
   approveTableOnlyBtn.addEventListener('click', async () => {
     const activeTabId = await getActiveTabId();
     if (!activeTabId) return;
@@ -110,7 +136,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // 4. Check Radios Only
+  // 5. Check Radios Only
   checkRadiosOnlyBtn.addEventListener('click', async () => {
     const activeTabId = await getActiveTabId();
     if (!activeTabId) return;
@@ -123,12 +149,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
       if (res?.status === 'COMPLETED') {
-        showStatus('Checklist Updated', `Selected "Yes" for ${res.result.checkedCount} evaluation rows.`, res.result.success);
+        showStatus('Checklist Updated', `Selected "Yes" for ${res.result.checkedCount} evaluation rows.`, true);
       }
     });
   });
 
-  // 5. Custom Indices Run
+  // 6. Custom Indices Run
   approveCustomBtn.addEventListener('click', async () => {
     const val = indicesInput.value.trim();
     const indices = parseIndices(val);
@@ -149,12 +175,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
       if (res?.status === 'COMPLETED') {
-        showStatus('Success', `Approved ${res.result.approvedCount} of ${res.result.totalTargeted} targeted rows.`, res.result.success);
+        showStatus('Success', `Approved ${res.result.approvedCount} of ${res.result.totalTargeted} targeted rows.`, true);
       }
     });
   });
 
-  // 6. Copy Diagnostic Log to Clipboard for Testers & AI
+  // 7. Copy Diagnostic Log to Clipboard for Testers & AI
   copyDiagnosticBtn.addEventListener('click', async () => {
     const activeTabId = await getActiveTabId();
     if (!activeTabId) return;

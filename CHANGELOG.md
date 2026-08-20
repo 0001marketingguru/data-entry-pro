@@ -7,10 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.4] - 2026-08-20
+
+### Added
+- **Hardened Enterprise `update.bat`**: Self-healing updater with Git auto-reset (`git reset --hard origin/main`), PowerShell direct ZIP fallback, and automated Chrome Extension tab launcher.
+- **In-Extension GitHub Update Checker**: Live version checking via GitHub Releases API displaying real-time update notifications in the popup.
+- **1-Click Desktop Shortcut Installer (`setup_desktop.bat`)**: Generates an "Update Data Entry Pro" desktop shortcut for non-technical users.
+
+---
+
 ## [1.1.3] - 2026-08-20
 
 ### Added
-- **Sequential Row Execution Loop**: Robust row-by-row async execution with menu polling delay (250ms) and keyboard `ArrowDown` + `Enter` fallback to ensure every single row (Rows 1 through 11+) is approved without portal race conditions.
+- **Sequential Row Execution Loop**: Robust row-by-row async execution with menu polling delay and keyboard `ArrowDown` + `Enter` fallback to ensure every single row (Rows 1 through 11+) is approved without portal race conditions.
 - **📋 1-Click Diagnostic Logger**: Added a "Copy Diagnostic Log for AI" button in the popup to instantly capture and copy complete execution traces to clipboard for debugging with developers/AI.
 
 ---

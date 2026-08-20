@@ -82,6 +82,40 @@ body {
   border-radius: 6px;
 }
 
+/* Update Banner */
+.update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(90deg, #78350f, #92400e);
+  border: 1px solid #f59e0b;
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 11px;
+  color: #fef3c7;
+}
+
+.update-banner.hidden {
+  display: none;
+}
+
+.update-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.update-action {
+  color: #fde68a;
+  text-decoration: underline;
+  font-weight: 600;
+  font-size: 11px;
+}
+
+.update-action:hover {
+  color: #ffffff;
+}
+
 /* Detection Banner */
 .detection-banner {
   display: flex;
