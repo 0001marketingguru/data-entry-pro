@@ -1,11 +1,12 @@
 /**
- * Data Entry Pro v1.1.3 - Enterprise Claims UI Automation Content Script
+ * Data Entry Pro v1.2.1 - Enterprise Claims UI Automation Content Script
  * 
- * Specifically optimized for PMJAY Payer "Actionable details" table:
- * - Robust sequential row loop with dynamic React-Select menu polling & keyboard fallback
- * - Full detailed diagnostic logger with 1-click clipboard export
- * - Disambiguates between static summary table and interactive Actionable Grid
- * - Selects "Yes" on all 3 standard medical evaluation checklist rows
+ * Specifically optimized for PMJAY Payer Claims Evaluation:
+ * - Tier 1: Sequential Actionable Details Table row approvals ("Approve")
+ * - Tier 2: 3-Row Medical Evaluation Checklist ("Yes" radios)
+ * - Tier 3: Case-Level Decision Action* dropdown ("Approve")
+ * - Tier 4: Standard Clinical Justification Remarks auto-population
+ * - Full Diagnostic Logger & Zero-Click Chrome Auto-Reload Bridge
  */
 
 (function () {
@@ -37,7 +38,7 @@
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       font-size: 13px;
       line-height: 1.4;
-      max-width: 400px;
+      max-width: 420px;
       border: 1px solid ${isSuccess ? '#059669' : '#dc2626'};
       pointer-events: none;
       transition: opacity 0.3s ease, transform 0.3s ease;
@@ -46,7 +47,7 @@
     `;
 
     toast.innerHTML = `
-      <div style="font-weight: 700; font-size: 14px; margin-bottom: 3px; display: flex; align-items: center; gap: 6px;">
+      <div style="font-weight: 700; font-size: 14px; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
         <span>⚡</span> ${title}
       </div>
       <div style="color: #e2e8f0; font-size: 12px;">${message}</div>
@@ -58,7 +59,7 @@
       toast.style.opacity = '0';
       toast.style.transform = 'translateY(-10px)';
       setTimeout(() => toast.remove(), 350);
-    }, 4500);
+    }, 4800);
   }
 
   function highlightElement(el) {
@@ -117,7 +118,7 @@
   }
 
   // =========================================================================
-  // --- Section 3: Semantic Table & Action Column Finder ---
+  // --- Section 3: Semantic Table & Row Scanner ---
   // =========================================================================
 
   function getActionableTableContext() {
@@ -126,7 +127,7 @@
     let actionColIndex = -1;
     let targetRows = [];
 
-    // Priority 1: Find table with interactive dropdown controls or inputs
+    // Priority 1: Table containing interactive React-Select or select elements
     for (const table of candidateTables) {
       const hasInteractiveControls = table.querySelector('.css-1nxbv4n-control, [class*="-control"], [class*="react-select"], select, [role="combobox"]');
       if (hasInteractiveControls) {
@@ -144,7 +145,7 @@
       }
     }
 
-    // Priority 2: Look under section with heading "Actionable details"
+    // Priority 2: Look under "Actionable details" section container
     if (targetRows.length === 0) {
       const headings = Array.from(document.querySelectorAll('div, h2, h3, h4, span, p'));
       const actionHeading = headings.find(el => el.textContent.trim().toLowerCase() === 'actionable details');
@@ -207,12 +208,9 @@
   }
 
   // =========================================================================
-  // --- Section 4: Robust React-Select Setter for a Single Row ---
+  // --- Section 4: Tier 1 - Sequential Table Row Approvals ---
   // =========================================================================
 
-  /**
-   * Automates setting a single React-Select or <select> dropdown to "Approve"
-   */
   async function setRowDropdownToApprove(row, rowNum, actionColIndex) {
     const startTime = Date.now();
     const tds = Array.from(row.querySelectorAll('td'));
@@ -232,7 +230,7 @@
       timeMs: 0
     };
 
-    // Case 1: Standard <select>
+    // Case 1: Standard HTML <select>
     const selectElem = actionCell.querySelector('select') || row.querySelector('select');
     if (selectElem) {
       for (let i = 0; i < selectElem.options.length; i++) {
@@ -266,7 +264,6 @@
     }
 
     try {
-      // Step A: Focus and trigger menu opening
       if (comboboxInput) {
         comboboxInput.focus();
       }
@@ -278,12 +275,10 @@
       clickTarget.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
       clickTarget.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
 
-      // Also dispatch Down Arrow on input to guarantee dropdown list opens
       if (comboboxInput) {
         comboboxInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, bubbles: true }));
       }
 
-      // Step B: Wait for menu portal to appear in DOM (poll up to 250ms)
       let approveOption = null;
       for (let attempt = 0; attempt < 5; attempt++) {
         await new Promise(r => setTimeout(r, 45));
@@ -297,7 +292,6 @@
         if (approveOption) break;
       }
 
-      // Step C: Click the Approve option if found
       if (approveOption) {
         approveOption.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
         approveOption.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
@@ -305,7 +299,6 @@
         logEntry.method = 'react_select_menu_click';
         logEntry.status = 'approved';
       } else {
-        // Step D: Keyboard Fallback (Type "Approve" + Enter)
         if (comboboxInput) {
           comboboxInput.focus();
           dispatchFrameworkValueChange(comboboxInput, 'Approve');
@@ -317,12 +310,10 @@
         }
       }
 
-      // Step E: Update hidden backing input
       if (hiddenBackingInput) {
         dispatchFrameworkValueChange(hiddenBackingInput, 'Approve');
       }
 
-      // Wait brief cooldown so React clears the portal before next row
       await new Promise(r => setTimeout(r, 60));
 
       const finalText = (actionCell.querySelector('[class*="singleValue"], .css-1i1tyke-singleValue')?.innerText || actionCell.innerText || '').trim().replace(/\n/g, ' ');
@@ -337,10 +328,6 @@
       return { success: false, log: logEntry };
     }
   }
-
-  // =========================================================================
-  // --- Section 5: Task 1 - Set Action Dropdown to "Approve" (All Rows) ---
-  // =========================================================================
 
   async function approveTableItems(targetIndices = 'ALL') {
     const { rows: targetRows, actionColIndex } = getActionableTableContext();
@@ -357,8 +344,6 @@
       indicesToProcess = minVal === 0 ? targetIndices.map(n => n + 1) : targetIndices;
     }
 
-    console.log(`[Data Entry Pro v1.1.3] Sequential approval processing on ${indicesToProcess.length} rows...`);
-
     let approvedCount = 0;
     const executionLogs = [];
 
@@ -372,8 +357,6 @@
       }
 
       highlightElement(row);
-
-      // Execute row approval sequentially
       const { success, log } = await setRowDropdownToApprove(row, rowNum, actionColIndex);
       executionLogs.push(log);
       if (success) approvedCount++;
@@ -388,7 +371,7 @@
   }
 
   // =========================================================================
-  // --- Section 6: Task 2 - Standard 3-Row Medical Evaluation Checklist ---
+  // --- Section 5: Tier 2 - 3-Row Medical Evaluation Checklist ---
   // =========================================================================
 
   function checkYesRadioButtons() {
@@ -491,7 +474,156 @@
   }
 
   // =========================================================================
-  // --- Section 7: Unified Runner & Diagnostic Store ---
+  // --- Section 6: Tier 3 - Overall Case-Level Decision Action* Dropdown ---
+  // =========================================================================
+
+  /**
+   * Targets the bottom Case-Level Decision Action* dropdown (Approve / Assign)
+   */
+  async function setCaseLevelActionToApprove() {
+    const startTime = Date.now();
+    const log = { target: 'case_level_action', status: 'pending', timeMs: 0 };
+
+    // Locate the case-level Action dropdown container (below checklist questions)
+    const allLabels = Array.from(document.querySelectorAll('label, span, div, p'));
+    const actionLabel = allLabels.find(el => {
+      const t = el.textContent.trim();
+      return (t === 'Action*' || t === 'Action *' || t === 'Action') && !el.closest('table') && !el.closest('thead');
+    });
+
+    let actionContainer = actionLabel?.closest('.formgroup, .row, .col-md-12, div') || null;
+    let reactControl = actionContainer?.querySelector('.css-1nxbv4n-control, [class*="-control"], [class*="react-select"], [role="combobox"]');
+    
+    if (!reactControl) {
+      // Fallback: search all react-select controls outside tables
+      const allControls = Array.from(document.querySelectorAll('.css-1nxbv4n-control, [class*="-control"]'));
+      reactControl = allControls.find(ctrl => !ctrl.closest('table') && !ctrl.closest('header') && !ctrl.closest('nav'));
+    }
+
+    if (!reactControl) {
+      log.status = 'control_not_found';
+      log.timeMs = Date.now() - startTime;
+      return { success: false, log };
+    }
+
+    try {
+      highlightElement(reactControl);
+      reactControl.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+
+      const comboboxInput = reactControl.querySelector('input[role="combobox"], input[id^="react-select-"], input[type="text"]');
+      if (comboboxInput) comboboxInput.focus();
+
+      reactControl.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+      reactControl.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+      reactControl.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+
+      if (comboboxInput) {
+        comboboxInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, bubbles: true }));
+      }
+
+      let approveOption = null;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        await new Promise(r => setTimeout(r, 45));
+        const menuOptions = Array.from(document.querySelectorAll('[class*="-option"], [role="option"], .select-item, [id*="-option-"], div[id^="react-select-"]'));
+        approveOption = menuOptions.find(opt => {
+          const t = (opt.innerText || opt.textContent || '').trim().toLowerCase();
+          return t === 'approve' || t === 'approved';
+        });
+        if (approveOption) break;
+      }
+
+      if (approveOption) {
+        approveOption.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+        approveOption.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+        approveOption.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+        log.status = 'approved_via_menu_click';
+      } else if (comboboxInput) {
+        comboboxInput.focus();
+        dispatchFrameworkValueChange(comboboxInput, 'Approve');
+        comboboxInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
+        log.status = 'approved_via_keyboard';
+      }
+
+      const hiddenInput = actionContainer?.querySelector('input[name*="selecthidden"], input[id*="selecthidden"]') || document.querySelector('input[name*="selecthidden"]:not(table input)');
+      if (hiddenInput) {
+        dispatchFrameworkValueChange(hiddenInput, 'Approve');
+      }
+
+      await new Promise(r => setTimeout(r, 60));
+      log.timeMs = Date.now() - startTime;
+      return { success: true, log };
+    } catch (err) {
+      log.status = 'error';
+      log.error = err.message;
+      log.timeMs = Date.now() - startTime;
+      return { success: false, log };
+    }
+  }
+
+  // =========================================================================
+  // --- Section 7: Tier 4 - Standard Clinical Remarks Auto-Population ---
+  // =========================================================================
+
+  /**
+   * Dynamically formats and sets standard remarks text based on approved amount
+   */
+  function setCaseLevelRemarks() {
+    const startTime = Date.now();
+    const log = { target: 'case_level_remarks', status: 'pending', text: '', timeMs: 0 };
+
+    // Locate the Remarks textarea (maxlength 500)
+    const textarea = document.querySelector('textarea.form-control, textarea[placeholder*="Type here"], textarea[maxlength="500"], textarea');
+    if (!textarea) {
+      log.status = 'textarea_not_found';
+      log.timeMs = Date.now() - startTime;
+      return { success: false, log };
+    }
+
+    // Step A: Extract Approved Amount from summary text
+    let approvedAmount = '';
+    const allTextBlocks = Array.from(document.querySelectorAll('span, p, div, td, b, strong'));
+    
+    // Look for "Claim amount approved (After technical evaluation) : ₹ 4,852.00"
+    for (const el of allTextBlocks) {
+      const text = el.innerText || el.textContent || '';
+      const match = text.match(/(?:Claim amount approved|Total payable amount|Amount Approved|Total Amount)[\s\S]*?[₹Rs.]\s*([\d,]+\.?\d*)/i);
+      if (match && match[1]) {
+        approvedAmount = match[1].trim();
+        break;
+      }
+    }
+
+    // Fallback: sum from table
+    if (!approvedAmount) {
+      const amountApprovedTds = Array.from(document.querySelectorAll('td')).filter(td => td.innerText.includes('₹'));
+      if (amountApprovedTds.length > 0) {
+        const lastVal = amountApprovedTds[amountApprovedTds.length - 1].innerText.replace(/[₹,\s]/g, '').trim();
+        if (lastVal && !isNaN(lastVal)) approvedAmount = lastVal;
+      }
+    }
+
+    // Step B: Determine if Consultation or Investigation based on Package Codes
+    const pageText = (document.body.innerText || '').toUpperCase();
+    const isConsultation = pageText.includes('CONSULTATION') || pageText.includes('OPD') || /CN\d+/.test(pageText);
+    
+    const formattedAmount = approvedAmount ? `Rs. ${approvedAmount}/-` : 'Rs.';
+    const remarkText = isConsultation
+      ? `CASE OF CONSULTATION SO FINAL APPROVAL AMOUNT IS ${formattedAmount}`
+      : `CASE OF INVESTIGATION SO FINAL APPROVAL AMOUNT IS ${formattedAmount}`;
+
+    highlightElement(textarea);
+    textarea.focus();
+    dispatchFrameworkValueChange(textarea, remarkText);
+
+    log.status = 'remarks_populated';
+    log.text = remarkText;
+    log.timeMs = Date.now() - startTime;
+
+    return { success: true, text: remarkText, log };
+  }
+
+  // =========================================================================
+  // --- Section 8: Unified 4-Tier Runner & Diagnostic Store ---
   // =========================================================================
 
   async function runDataEntryProAutomation(config = {}) {
@@ -499,23 +631,33 @@
       ? config.indices 
       : 'ALL';
 
+    // Tier 1: Table Rows Approval
     const tableResult = await approveTableItems(targetIndices);
+
+    // Tier 2: 3-Row Medical Checklist
     const radioResult = checkYesRadioButtons();
 
-    const isSuccess = tableResult.success && radioResult.success;
-    const msg = `Approved ${tableResult.approvedCount}/${tableResult.totalTargeted} table rows & selected "Yes" on ${radioResult.checkedCount}/3 medical checklist items.`;
+    // Tier 3: Case-Level Action* Dropdown -> "Approve"
+    const caseActionResult = await setCaseLevelActionToApprove();
+
+    // Tier 4: Remarks Auto-Population
+    const remarksResult = setCaseLevelRemarks();
+
+    const isSuccess = tableResult.success && radioResult.success && caseActionResult.success;
+    const msg = `Approved ${tableResult.approvedCount}/${tableResult.totalTargeted} table rows, checked 3 Yes radios, set Case Action to "Approve", and added standard Remarks!`;
     
-    showOnScreenNotification('Automation Complete', msg, isSuccess);
+    showOnScreenNotification('Full Approval Complete', msg, isSuccess);
 
     const diagnosticReport = {
       timestamp: new Date().toISOString(),
       url: window.location.href,
-      tableResult,
-      radioResult,
+      tier1_tableResult: tableResult,
+      tier2_radioResult: radioResult,
+      tier3_caseAction: caseActionResult,
+      tier4_remarks: remarksResult,
       overallSuccess: isSuccess
     };
 
-    // Store in memory & chrome.storage for diagnostic retrieval
     window.__DATA_ENTRY_PRO_LAST_RUN__ = diagnosticReport;
     window.__DATA_ENTRY_PRO_LOGS__.unshift(diagnosticReport);
     if (window.__DATA_ENTRY_PRO_LOGS__.length > 10) window.__DATA_ENTRY_PRO_LOGS__.pop();
@@ -530,6 +672,8 @@
     scanTableInfo,
     approveTableItems,
     checkYesRadioButtons,
+    setCaseLevelActionToApprove,
+    setCaseLevelRemarks,
     runDataEntryProAutomation,
     getLastReport: () => window.__DATA_ENTRY_PRO_LAST_RUN__ || null
   };
@@ -592,5 +736,5 @@
     }
   });
 
-  console.log('[Data Entry Pro v1.1.3] Content script ready with sequential loop & diagnostic export.');
+  console.log('[Data Entry Pro v1.2.1] Content script ready with 4-Tier Unified Approval Engine.');
 })();

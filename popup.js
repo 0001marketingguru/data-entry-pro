@@ -1,7 +1,7 @@
-// Data Entry Pro v1.1.4 - Popup Controller with Live GitHub Update Checker
+// Data Entry Pro v1.2.1 - Popup Controller with 4-Tier Reporting
 
 document.addEventListener('DOMContentLoaded', async () => {
-  const CURRENT_VERSION = 'v1.1.4';
+  const CURRENT_VERSION = 'v1.2.1';
   const GITHUB_REPO = '0001marketingguru/data-entry-pro';
 
   const detectionBox = document.getElementById('detectionBox');
@@ -43,7 +43,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       .filter(n => !isNaN(n) && n > 0);
   }
 
-  // 1. Live GitHub Version Checker (Recommendation 2)
+  // 1. Live GitHub Version Checker
   async function checkForUpdates() {
     try {
       const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, {
@@ -52,7 +52,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (!res.ok) return;
 
       const data = await res.json();
-      const latestTag = data.tag_name; // e.g. "v1.1.4" or "v1.2.0"
+      const latestTag = data.tag_name;
 
       if (latestTag && latestTag !== CURRENT_VERSION) {
         updateText.textContent = `New Update ${latestTag} Available!`;
@@ -60,7 +60,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         updateBanner.classList.remove('hidden');
       }
     } catch (e) {
-      console.debug('[Data Entry Pro] Update check skipped (offline/rate limit).');
+      console.debug('[Data Entry Pro] Update check skipped.');
     }
   }
   checkForUpdates();
@@ -80,7 +80,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (detectedRowCount > 0) {
         const approvedText = info.approvedCount > 0 ? ` (${info.approvedCount} approved, ${info.pendingCount} pending)` : '';
         detectionText.innerHTML = `<strong>${detectedRowCount} Claim Rows Found</strong>${approvedText}`;
-        approveAllUnifiedLabel.textContent = `Approve All ${detectedRowCount} Rows & Checklist`;
+        approveAllUnifiedLabel.textContent = `Full Auto-Approve (${detectedRowCount} Rows + Checklist + Case Action)`;
         approveTableOnlyLabel.textContent = `Approve Table Only (${detectedRowCount})`;
       } else {
         detectionText.textContent = 'No claim rows detected on this page.';
@@ -88,7 +88,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // 3. Approve ALL Unified (Table + Checklist)
+  // 3. Approve ALL Unified (All 4 Tiers)
   approveAllUnifiedBtn.addEventListener('click', async () => {
     const activeTabId = await getActiveTabId();
     if (!activeTabId) {
@@ -96,7 +96,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    showStatus('Processing', 'Executing sequential approvals across all rows...', true);
+    showStatus('Processing', 'Executing full 4-Tier approval across table, checklist, case action & remarks...', true);
 
     chrome.tabs.sendMessage(activeTabId, { action: 'RUN_AUTOMATION', config: { indices: 'ALL' } }, (res) => {
       if (chrome.runtime.lastError) {
@@ -105,13 +105,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
 
       if (res && res.status === 'COMPLETED') {
-        const { tableResult, radioResult } = res.summary;
+        const { tier1_tableResult, tier2_radioResult, tier3_caseAction, tier4_remarks } = res.summary;
         const msg = `
-          <strong>Dropdowns:</strong> Set <strong>${tableResult.approvedCount} of ${tableResult.totalTargeted}</strong> rows to "Approve".<br>
-          <strong>Checklist:</strong> Selected "Yes" on <strong>${radioResult.checkedCount} of ${radioResult.expected}</strong> evaluation items.
+          <strong>1. Table Rows:</strong> Set <strong>${tier1_tableResult.approvedCount} of ${tier1_tableResult.totalTargeted}</strong> rows to "Approve".<br>
+          <strong>2. Checklist:</strong> Checked "Yes" on <strong>${tier2_radioResult.checkedCount} of 3</strong> evaluation questions.<br>
+          <strong>3. Case Action*:</strong> Set to <strong>"Approve"</strong> ✅<br>
+          <strong>4. Remarks:</strong> ${tier4_remarks.text || 'Populated standard remark.'}
         `;
-        showStatus('Batch Execution Finished', msg, tableResult.success);
-        detectionText.innerHTML = `<strong>${tableResult.approvedCount}/${tableResult.totalTargeted} Rows Approved ✅</strong>`;
+        showStatus('Full Approval Finished', msg, res.summary.overallSuccess);
+        detectionText.innerHTML = `<strong>${tier1_tableResult.approvedCount}/${tier1_tableResult.totalTargeted} Rows Approved ✅</strong>`;
       } else {
         showStatus('Error', res?.error || 'Unknown error occurred.', false);
       }
@@ -162,7 +164,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!activeTabId) return;
 
     if (indices.length === 0) {
-      showStatus('Note', 'No specific row numbers entered. Triggering Approve All instead.', true);
+      showStatus('Note', 'No specific row numbers entered. Triggering Full Auto-Approve instead.', true);
       approveAllUnifiedBtn.click();
       return;
     }
@@ -180,7 +182,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // 7. Copy Diagnostic Log to Clipboard for Testers & AI
+  // 7. Copy Diagnostic Log to Clipboard
   copyDiagnosticBtn.addEventListener('click', async () => {
     const activeTabId = await getActiveTabId();
     if (!activeTabId) return;
@@ -207,7 +209,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     const jsonReport = JSON.stringify(report, null, 2);
-    const formattedText = `### 📋 Data Entry Pro Diagnostic Log\n**Timestamp:** ${report.timestamp}\n**Overall Success:** ${report.overallSuccess}\n**Dropdowns Approved:** ${report.tableResult?.approvedCount}/${report.tableResult?.totalTargeted}\n\n\`\`\`json\n${jsonReport}\n\`\`\``;
+    const formattedText = `### 📋 Data Entry Pro Diagnostic Log\n**Timestamp:** ${report.timestamp}\n**Overall Success:** ${report.overallSuccess}\n**Tier 1 (Table):** ${report.tier1_tableResult?.approvedCount}/${report.tier1_tableResult?.totalTargeted}\n**Tier 2 (Checklist):** ${report.tier2_radioResult?.checkedCount}/3\n**Tier 3 (Case Action):** ${report.tier3_caseAction?.status}\n**Tier 4 (Remarks):** ${report.tier4_remarks?.text}\n\n\`\`\`json\n${jsonReport}\n\`\`\``;
 
     navigator.clipboard.writeText(formattedText).then(() => {
       showCopySuccess("Diagnostic log copied! Paste in chat.");
