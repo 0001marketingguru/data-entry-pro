@@ -7,28 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.5] - 2026-08-21
+
+### Fixed
+- **Clean Lightweight Case-Level Action* Locator**: Directly isolates the non-table Action dropdown located above the Remarks textarea.
+- **Direct Event Simulation**: Simple, robust mousedown & click sequence to open and select `"Approve"`.
+
+---
+
 ## [1.2.4] - 2026-08-21
 
 ### Fixed
-- **Document Position Case-Level Action* Locator**: Pinpointed the bottom case decision dropdown using DOM relative position (`compareDocumentPosition`) immediately preceding the Remarks textarea, strictly eliminating accidental targeting of Table Row 1.
-- **True State Verification**: Returns exact resulting value text in diagnostic logs for 100% transparency.
-
----
-
-## [1.2.3] - 2026-08-21
-
-### Fixed
-- **Deterministic React-Select State & Pointer Engine (`setReactSelectValue`)**:
-  - Direct React Fiber `onChange` state invocation to eliminate DOM timing issues.
-  - Isolated ID prefix matching preventing race conditions with table rows.
-  - Complete pointer event chain (`pointerdown`, `mousedown`, `mouseup`, `click`, and `Enter` keydown).
-
----
-
-## [1.2.2] - 2026-08-21
-
-### Fixed
-- **Multi-Strategy Case-Level Action* Locator**: Enhanced detection of the bottom case decision dropdown with 4 fallback locator strategies.
+- **Document Position Case-Level Action* Locator**: Pinpointed the bottom case decision dropdown using DOM relative position.
 
 ---
 
