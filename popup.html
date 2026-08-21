@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Data Entry Pro v1.4.0</title>
+  <title>Data Entry Pro v1.5.0</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
@@ -14,10 +14,10 @@
         <div class="logo-icon">⚡</div>
         <div class="logo-text">
           <h1>Data Entry Pro</h1>
-          <span class="subtitle">Claims Form Automation</span>
+          <span class="subtitle">Claims Form Automation & Audit Center</span>
         </div>
       </div>
-      <span class="badge" id="versionBadge">v1.4.0</span>
+      <span class="badge" id="versionBadge">v1.5.0</span>
     </header>
 
     <!-- Live GitHub Update Available Banner -->
@@ -29,10 +29,24 @@
       <a id="updateLink" href="https://github.com/0001marketingguru/data-entry-pro/releases" target="_blank" class="update-action">View Release</a>
     </div>
 
-    <!-- Live Table Detection Banner -->
-    <div id="detectionBox" class="detection-banner">
-      <span class="pulse-dot"></span>
-      <span id="detectionText">Scanning claim table...</span>
+    <!-- Today's Productivity KPI Dashboard -->
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <span class="kpi-label">Today's Claims</span>
+        <span class="kpi-value" id="kpiClaimsCount">0</span>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-label">Evaluated Value</span>
+        <span class="kpi-value highlight" id="kpiTotalValue">₹ 0.00</span>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-label">Deductions</span>
+        <span class="kpi-value deduction" id="kpiTotalDeductions">₹ 0.00</span>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-label">Avg Speed</span>
+        <span class="kpi-value" id="kpiAvgSpeed">0s/case</span>
+      </div>
     </div>
 
     <!-- Primary Quick-Action -->
@@ -52,32 +66,51 @@
       </div>
     </div>
 
-    <!-- Dynamic Island HUD Quick Controls -->
-    <div style="margin-top: 10px; display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.04); padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
-      <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #cbd5e1; font-weight: 600;">
-        <span>🏝️</span> Auditor HUD & Mode Switcher
+    <!-- Export & Reporting Hub -->
+    <div class="export-hub">
+      <div class="export-hub-title">
+        <span>📊</span> Shift Reporting & Exports
       </div>
-      <button id="toggleHudBtn" class="btn btn-sm btn-outline" style="font-size: 11px; padding: 4px 8px;">Toggle (<kbd>Alt+H</kbd>)</button>
+      <div class="export-btn-group">
+        <button id="downloadTodayCsvBtn" class="btn btn-sm btn-export-excel" title="Download Excel-Compatible CSV for Today">
+          <span>📥</span> Download Excel CSV (Today)
+        </button>
+        <button id="copyWhatsAppSummaryBtn" class="btn btn-sm btn-export-share" title="Copy clean summary for WhatsApp/Slack/Email">
+          <span>📱</span> Copy Shift Summary
+        </button>
+      </div>
     </div>
 
-    <!-- Collapsible Custom Indices -->
-    <details class="custom-details" id="customDetails">
+    <!-- Live Case Search & Recent Log Feed -->
+    <details class="custom-details" id="recentLogDetails" open>
       <summary class="custom-summary">
-        <span>Target Specific Rows (Optional)</span>
+        <span>Recent Processed Claims (<span id="logCountBadge">0</span>)</span>
         <span class="summary-arrow">▾</span>
       </summary>
       <div class="custom-body">
-        <div class="input-container">
-          <input 
-            type="text" 
-            id="indicesInput" 
-            placeholder="e.g. 2, 3, 4, 5" 
-          />
-          <button id="approveCustomBtn" class="btn btn-sm btn-primary">Run</button>
+        <input 
+          type="text" 
+          id="searchLogInput" 
+          placeholder="🔍 Search Case ID..." 
+          style="margin-bottom: 8px;"
+        />
+        <div class="recent-claims-list" id="recentClaimsList">
+          <div class="empty-log-msg">No claims processed today yet. Run auto-approve or submit a case to log!</div>
         </div>
-        <p class="hint">Leave empty to auto-target all detected rows.</p>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
+          <button id="downloadAllHistoryCsvBtn" class="btn-text" style="font-size: 11px; color: #94a3b8; cursor: pointer; background: none; border: none; text-decoration: underline;">Export Full History (All Days)</button>
+          <button id="clearTodayLogBtn" class="btn-text" style="font-size: 11px; color: #f87171; cursor: pointer; background: none; border: none;">Reset Today's Log</button>
+        </div>
       </div>
     </details>
+
+    <!-- Dynamic Island HUD Quick Controls -->
+    <div style="margin-top: 10px; display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.04); padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
+      <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #cbd5e1; font-weight: 600;">
+        <span>🏝️</span> On-Screen Auditor HUD
+      </div>
+      <button id="toggleHudBtn" class="btn btn-sm btn-outline" style="font-size: 11px; padding: 4px 8px;">Toggle (<kbd>Alt+H</kbd>)</button>
+    </div>
 
     <!-- Live Status Console -->
     <div id="statusBox" class="status-box hidden">

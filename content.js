@@ -1,31 +1,29 @@
 /**
- * Data Entry Pro v1.4.0 - Enterprise Claims UI Automation & Advanced Remarks Engine
+ * Data Entry Pro v1.5.0 - Enterprise Claims UI Automation & Audit Command Center
  * 
  * Features:
- * - ✍️ Advanced Remarks Decision Engine:
- *   - ❓ Query Mode (Highest Priority): Triggered if any row/case is "Query" -> Clinical Query remark
- *   - 🔬 Investigation Mode (Dominant): Triggered if ANY Lab/Diagnostic codes (LB, RD, XR, CT, US) exist (even with CN present)
- *   - 🩺 Consultation Mode: Triggered for pure consultation claims (CN only, no lab tests)
- * - 🏝️ Dynamic Island Claims Auditor HUD with 1-Click Mode Switcher:
- *   - Real-time display of Claimed Amount (₹ 4,363.00) vs Evaluated Amount (₹ 4,306.00)
- *   - 1-Click Mode Chips [ 🩺 Consult | 🔬 Invest | ❓ Query ] with live remarks sync
+ * - 📊 Enterprise Productivity Logger & Speed Telemetry (WAL):
+ *   - Auto-captures Case ID, Timestamps, Claimed, Approved, Deductions, Packages, and Remarks
+ *   - Turnaround Time (TAT) speed tracker (seconds per claim)
+ *   - In-place deduplication & date-partitioned persistence in chrome.storage.local
+ *   - Automatic listener on final "Submit" button + 4-Tier Automation run
+ * - 🏝️ Dynamic Island Claims Auditor HUD & Live Speedometer:
+ *   - Displays Claimed, Evaluated, Mode Switcher, and Real-Time Daily Count (e.g. "📊 Today: 24 | ₹ 1.12L")
  *   - Live SPA Mutation Observer (Auto-syncs on next case without refresh)
- *   - Draggable anywhere with magnetic edge snapping & position memory
- *   - 1-Click Copy & Integrated 1-Click Auto-Approve button
- * - 🎯 Unified 4-Tier Approval Engine:
- *   - Tier 1: Sequential Table row approvals ("Approve" across all rows)
- *   - Tier 2: 3-Row Medical Evaluation Checklist ("Yes" radios)
- *   - Tier 3: Case-Level Decision Action* dropdown ("Approve")
- *   - Tier 4: Precision Remarks Auto-Population with exact evaluated amount
- * - Zero-Click Chrome Auto-Reload Bridge & Full Diagnostic Logger
+ * - ✍️ Advanced Remarks Decision Engine:
+ *   - ❓ Query Mode (Highest Priority)
+ *   - 🔬 Investigation Mode (Dominant when any Lab/Diag codes exist)
+ *   - 🩺 Consultation Mode (Pure consultation claims)
+ * - 🎯 Unified 4-Tier Approval Engine with Zero-Click Auto-Reload Bridge
  */
 
 (function () {
   'use strict';
 
-  // Global Diagnostic History & State Store
+  // Global Diagnostic History & Session Timers
   window.__DATA_ENTRY_PRO_LOGS__ = window.__DATA_ENTRY_PRO_LOGS__ || [];
-  window.__DATA_ENTRY_PRO_SELECTED_MODE__ = null; // null = auto-detect
+  window.__DATA_ENTRY_PRO_SELECTED_MODE__ = null;
+  window.__DATA_ENTRY_PRO_CASE_START_TIME__ = Date.now();
 
   // =========================================================================
   // --- Section 1: UI Feedback Utilities (Toast & Row Highlight) ---
@@ -130,8 +128,39 @@
   }
 
   // =========================================================================
-  // --- Section 3: Amount Extractors (Claimed vs Evaluated) ---
+  // --- Section 3: Multi-Source Case ID & Financial Extractors ---
   // =========================================================================
+
+  /**
+   * Multi-Source Case ID Extractor
+   * 1. Breadcrumb: "Home > Case Details (CGHS/GW/R1/2025/2026071060011231)"
+   * 2. Header & Patient Table Scan
+   * 3. URL Query Parameters
+   */
+  function extractCaseId() {
+    const allText = document.body ? (document.body.innerText || '') : '';
+    
+    // Strategy 1: Breadcrumb match
+    const breadcrumbMatch = allText.match(/Case\s+Details\s*\(([^\)]+)\)/i);
+    if (breadcrumbMatch && breadcrumbMatch[1]) {
+      return breadcrumbMatch[1].trim();
+    }
+
+    // Strategy 2: Structured claim format regex
+    const codeMatch = allText.match(/(?:CGHS|PMJAY|ECHS|RGHS|CLAIM)\/[A-Z0-9_\/\-]+/i);
+    if (codeMatch && codeMatch[0]) {
+      return codeMatch[0].trim();
+    }
+
+    // Strategy 3: URL search params
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const paramId = params.get('caseId') || params.get('claimId') || params.get('id');
+      if (paramId) return paramId.trim();
+    } catch (e) {}
+
+    return 'CASE-' + new Date().toISOString().slice(0, 10).replace(/-/g, '') + '-' + Math.floor(1000 + Math.random() * 9000);
+  }
 
   function extractClaimedAmount() {
     const bodyText = document.body ? (document.body.innerText || '') : '';
@@ -203,14 +232,7 @@
   // --- Section 4: Advanced Remarks Decision & Auto-Classification Engine ---
   // =========================================================================
 
-  /**
-   * Evaluates the claim against the 3-Rule Decision Hierarchy:
-   * 1. Query Mode (Highest Priority): If any row/case is set to "Query"
-   * 2. Investigation Mode (Dominant): If ANY Lab/Diagnostic codes (LB, RD, XR, CT, US) exist (even with CN present)
-   * 3. Consultation Mode: If claim contains ONLY consultation (CN only, no lab tests)
-   */
   function detectCaseRemarkMode() {
-    // If user explicitly selected a mode on HUD, honor it
     if (window.__DATA_ENTRY_PRO_SELECTED_MODE__) {
       return window.__DATA_ENTRY_PRO_SELECTED_MODE__;
     }
@@ -219,7 +241,6 @@
     const allCodes = [];
     let hasQueryAction = false;
 
-    // Scan table rows
     rows.forEach(r => {
       const tds = Array.from(r.querySelectorAll('td'));
       const code = (tds[1]?.innerText || '').trim().toUpperCase();
@@ -229,22 +250,17 @@
       if (actionText.includes('query')) hasQueryAction = true;
     });
 
-    // Check Case-Level Action
     const caseActionText = (document.querySelector('textarea')?.closest('.row, form, div')?.parentElement?.querySelector('.css-1nxbv4n-control')?.innerText || '').toLowerCase();
     if (caseActionText.includes('query')) hasQueryAction = true;
 
-    // Rule 1: Query takes highest priority
     if (hasQueryAction) return 'QUERY';
 
-    // Rule 2: If ANY code is Lab / Diagnostic (LB, RD, XR, CT, MR, US, NU, PA) -> INVESTIGATION dominates
     const hasLabOrDiag = allCodes.some(c => /^(?:LB|RD|XR|CT|MR|US|NU|PA|BI)/i.test(c));
     if (hasLabOrDiag) return 'INVESTIGATION';
 
-    // Rule 3: Pure Consultation (Only CN codes and NO lab tests)
     const hasConsult = allCodes.some(c => /^CN/i.test(c)) || (document.body.innerText || '').toUpperCase().includes('CONSULTATION');
     if (hasConsult) return 'CONSULTATION';
 
-    // Default fallback
     return 'INVESTIGATION';
   }
 
@@ -263,7 +279,79 @@
   }
 
   // =========================================================================
-  // --- Section 5: Semantic Table & Row Scanner ---
+  // --- Section 5: Enterprise Audit Vault & Productivity Logger ---
+  // =========================================================================
+
+  async function logProcessedClaim(status = 'APPROVED') {
+    const caseId = extractCaseId();
+    const claimed = extractClaimedAmount();
+    const approved = extractClaimAmountApproved();
+    const mode = detectCaseRemarkMode();
+    const textarea = document.querySelector('textarea');
+    const remarks = textarea ? textarea.value.trim() : generateRemarkText(mode, approved);
+    const { rows } = getActionableTableContext();
+    const allCodes = rows.map(r => (r.querySelectorAll('td')[1]?.innerText || '').trim().toUpperCase()).filter(Boolean);
+
+    const now = new Date();
+    const dateKey = now.toISOString().slice(0, 10);
+    const timeFormatted = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const durationSec = Math.max(1, Math.round((Date.now() - (window.__DATA_ENTRY_PRO_CASE_START_TIME__ || Date.now())) / 1000));
+
+    const claimedNum = parseFloat((claimed || '0').replace(/,/g, '')) || 0;
+    const approvedNum = parseFloat((approved || '0').replace(/,/g, '')) || 0;
+    const deductionNum = Math.max(0, claimedNum - approvedNum);
+
+    const record = {
+      caseId,
+      timestamp: now.toISOString(),
+      date: dateKey,
+      timeFormatted,
+      timeSpentSeconds: durationSec,
+      claimedAmount: claimed || '0.00',
+      approvedAmount: approved || '0.00',
+      deductionDelta: deductionNum.toFixed(2),
+      decision: mode === 'QUERY' ? 'Query' : 'Approve',
+      mode,
+      packageCodes: allCodes,
+      totalItems: rows.length || 1,
+      remarks,
+      status
+    };
+
+    chrome.storage?.local?.get(['data_entry_pro_audit_vault'], (res) => {
+      const vault = res?.data_entry_pro_audit_vault || {};
+      if (!vault[dateKey]) vault[dateKey] = [];
+
+      const existingIdx = vault[dateKey].findIndex(r => r.caseId === caseId);
+      if (existingIdx >= 0) {
+        vault[dateKey][existingIdx] = record;
+      } else {
+        vault[dateKey].unshift(record);
+      }
+
+      chrome.storage?.local?.set({ data_entry_pro_audit_vault: vault }, () => {
+        if (window.__DATA_ENTRY_PRO_UPDATE_HUD__) window.__DATA_ENTRY_PRO_UPDATE_HUD__();
+      });
+    });
+
+    return record;
+  }
+
+  function attachSubmitInterceptor() {
+    document.addEventListener('click', (e) => {
+      const btn = e.target.closest('button, input[type="submit"]');
+      if (btn) {
+        const btnText = (btn.innerText || btn.value || '').trim().toLowerCase();
+        if (btnText === 'submit' || btnText.includes('submit claim') || btnText.includes('final submit')) {
+          logProcessedClaim('SUBMITTED');
+          showOnScreenNotification('Claim Logged', `Case [${extractCaseId()}] recorded to daily log.`, true);
+        }
+      }
+    }, true);
+  }
+
+  // =========================================================================
+  // --- Section 6: Semantic Table & Row Scanner ---
   // =========================================================================
 
   function getActionableTableContext() {
@@ -351,7 +439,7 @@
   }
 
   // =========================================================================
-  // --- Section 6: Tier 1 - Sequential Table Row Approvals ---
+  // --- Section 7: Tier 1 - Sequential Table Row Approvals ---
   // =========================================================================
 
   async function setRowDropdownToApprove(row, rowNum, actionColIndex) {
@@ -373,7 +461,6 @@
       timeMs: 0
     };
 
-    // Standard HTML <select>
     const selectElem = actionCell.querySelector('select') || row.querySelector('select');
     if (selectElem) {
       for (let i = 0; i < selectElem.options.length; i++) {
@@ -392,7 +479,6 @@
       }
     }
 
-    // React-Select Component
     const reactSelectControl = actionCell.querySelector('.css-1nxbv4n-control, [class*="-control"], [class*="react-select"], [role="combobox"]') ||
                                row.querySelector('.css-1nxbv4n-control, [class*="-control"]');
     
@@ -480,7 +566,7 @@
   }
 
   // =========================================================================
-  // --- Section 7: Tier 2 - 3-Row Medical Evaluation Checklist ---
+  // --- Section 8: Tier 2 - 3-Row Medical Evaluation Checklist ---
   // =========================================================================
 
   function checkYesRadioButtons() {
@@ -536,7 +622,6 @@
       });
     }
 
-    // Fallback: bottom 3 radio sets
     if (checkedCount === 0) {
       const radioGroups = new Map();
       allRadioInputs.forEach(radio => {
@@ -583,7 +668,7 @@
   }
 
   // =========================================================================
-  // --- Section 8: Tier 3 - Case-Level Decision Action* Dropdown ---
+  // --- Section 9: Tier 3 - Case-Level Decision Action* Dropdown ---
   // =========================================================================
 
   async function setCaseLevelActionToApprove() {
@@ -649,7 +734,7 @@
   }
 
   // =========================================================================
-  // --- Section 9: Tier 4 - Precision Summary Amount Extractor & Remarks ---
+  // --- Section 10: Tier 4 - Precision Summary Amount Extractor & Remarks ---
   // =========================================================================
 
   function setCaseLevelRemarks(forcedMode = null) {
@@ -682,7 +767,7 @@
   }
 
   // =========================================================================
-  // --- Section 10: Unified 4-Tier Runner & Diagnostic Store ---
+  // --- Section 11: Unified 4-Tier Runner & Diagnostic Store ---
   // =========================================================================
 
   async function runDataEntryProAutomation(config = {}) {
@@ -700,9 +785,13 @@
     
     showOnScreenNotification('Full Approval Complete', msg, isSuccess);
 
+    // Auto-record to Enterprise Audit Vault
+    await logProcessedClaim('APPROVED');
+
     const diagnosticReport = {
       timestamp: new Date().toISOString(),
       url: window.location.href,
+      caseId: extractCaseId(),
       tier1_tableResult: tableResult,
       tier2_radioResult: radioResult,
       tier3_caseAction: caseActionResult,
@@ -724,7 +813,7 @@
   }
 
   // =========================================================================
-  // --- Section 11: Dynamic Island Claims Auditor HUD Component ---
+  // --- Section 12: Dynamic Island Claims Auditor HUD & Speedometer ---
   // =========================================================================
 
   function createDynamicIslandHUD() {
@@ -744,7 +833,7 @@
       ${savedPos.left !== undefined ? `left: ${savedPos.left}px;` : `right: ${savedPos.right || 24}px;`}
       top: ${savedPos.top !== undefined ? savedPos.top : 24}px;
       z-index: 2147483646;
-      background: rgba(15, 23, 42, 0.92);
+      background: rgba(15, 23, 42, 0.94);
       backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
       border: 1px solid rgba(255, 255, 255, 0.12);
@@ -759,7 +848,7 @@
       user-select: none;
       cursor: grab;
       transition: box-shadow 0.3s ease, border-color 0.3s ease, opacity 0.25s ease;
-      opacity: 0.88;
+      opacity: 0.90;
     `;
 
     hud.innerHTML = `
@@ -850,6 +939,18 @@
           background: #d97706;
           box-shadow: 0 2px 8px rgba(217, 119, 6, 0.4);
         }
+        .dep-ticker-chip {
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          background: rgba(59, 130, 246, 0.15);
+          border: 1px solid rgba(59, 130, 246, 0.3);
+          padding: 3px 8px;
+          border-radius: 9999px;
+          font-size: 11px;
+          font-weight: 700;
+          color: #93c5fd;
+        }
         .dep-hud-btn {
           background: linear-gradient(135deg, #059669, #10b981);
           color: #ffffff;
@@ -918,6 +1019,14 @@
         <span class="dep-mode-chip" data-mode="INVESTIGATION" id="depModeInvest">🔬 Invest</span>
         <span class="dep-mode-chip" data-mode="CONSULTATION" id="depModeConsult">🩺 Consult</span>
         <span class="dep-mode-chip" data-mode="QUERY" id="depModeQuery">❓ Query</span>
+      </div>
+
+      <div class="dep-hud-divider"></div>
+
+      <!-- Live Speedometer Ticker -->
+      <div class="dep-ticker-chip" id="depTickerChip" title="Today's Productivity Summary">
+        <span>📊 Today:</span>
+        <span id="depTodayCount">0</span>
       </div>
 
       <div class="dep-hud-divider"></div>
@@ -999,12 +1108,10 @@
         const selectedMode = chip.getAttribute('data-mode');
         window.__DATA_ENTRY_PRO_SELECTED_MODE__ = selectedMode;
         
-        // Update active UI styling
         modeChips.forEach(c => c.classList.remove('active', 'query'));
         chip.classList.add('active');
         if (selectedMode === 'QUERY') chip.classList.add('query');
 
-        // Immediately update remarks on the page
         const res = setCaseLevelRemarks(selectedMode);
         showOnScreenNotification('Remarks Updated', `Switched to [${selectedMode}] Mode: "${res.text}"`, true);
       });
@@ -1026,14 +1133,17 @@
     // =========================================================================
     let lastClaimed = '';
     let lastApproved = '';
+    let lastCaseId = '';
 
     function updateHUDData() {
+      const caseId = extractCaseId();
       const claimed = extractClaimedAmount();
       const approved = extractClaimAmountApproved();
       const detectedMode = detectCaseRemarkMode();
 
       const claimedEl = document.getElementById('depClaimedVal');
       const approvedEl = document.getElementById('depApprovedVal');
+      const todayCountEl = document.getElementById('depTodayCount');
 
       if (claimedEl && claimed) {
         claimedEl.innerText = `₹ ${claimed}`;
@@ -1058,6 +1168,22 @@
         }
       });
 
+      // Update Today's Counter from Storage
+      const dateKey = new Date().toISOString().slice(0, 10);
+      chrome.storage?.local?.get(['data_entry_pro_audit_vault'], (res) => {
+        const vault = res?.data_entry_pro_audit_vault || {};
+        const todayRows = vault[dateKey] || [];
+        if (todayCountEl) {
+          todayCountEl.innerText = `${todayRows.length} claims`;
+        }
+      });
+
+      // Case Transition detected in SPA
+      if (caseId && caseId !== lastCaseId) {
+        lastCaseId = caseId;
+        window.__DATA_ENTRY_PRO_CASE_START_TIME__ = Date.now();
+      }
+
       // Pulse animation if new case data detected
       if ((claimed && claimed !== lastClaimed) || (approved && approved !== lastApproved)) {
         lastClaimed = claimed;
@@ -1081,14 +1207,20 @@
     observer.observe(document.body, { childList: true, subtree: true });
   }
 
-  // Initialize HUD
+  // Initialize HUD & Submit Interceptor
   chrome.storage?.local?.get(['hudVisible'], (res) => {
     if (res?.hudVisible !== false) {
       if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', createDynamicIslandHUD);
+        document.addEventListener('DOMContentLoaded', () => {
+          createDynamicIslandHUD();
+          attachSubmitInterceptor();
+        });
       } else {
         createDynamicIslandHUD();
+        attachSubmitInterceptor();
       }
+    } else {
+      attachSubmitInterceptor();
     }
   });
 
@@ -1116,9 +1248,11 @@
     checkYesRadioButtons,
     setCaseLevelActionToApprove,
     setCaseLevelRemarks,
+    extractCaseId,
     extractClaimedAmount,
     extractClaimAmountApproved,
     detectCaseRemarkMode,
+    logProcessedClaim,
     runDataEntryProAutomation,
     getLastReport: () => window.__DATA_ENTRY_PRO_LAST_RUN__ || null
   };
@@ -1128,7 +1262,7 @@
     if (request.action === 'GET_TABLE_INFO') {
       try {
         const info = scanTableInfo();
-        sendResponse({ status: 'COMPLETED', info });
+        sendResponse({ status: 'COMPLETED', info, caseId: extractCaseId() });
       } catch (err) {
         sendResponse({ status: 'ERROR', error: err.message });
       }
@@ -1196,5 +1330,5 @@
     }
   });
 
-  console.log('[Data Entry Pro v1.4.0] Advanced Remarks Engine & HUD Active.');
+  console.log('[Data Entry Pro v1.5.0] Audit Command Center & Speedometer Active.');
 })();
