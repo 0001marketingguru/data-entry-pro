@@ -1,8 +1,8 @@
 /**
- * Data Entry Pro v1.2.6 - Enterprise Claims UI Automation Content Script
+ * Data Entry Pro v1.2.7 - Enterprise Claims UI Automation Content Script
  * 
  * Specifically optimized for PMJAY Payer Claims Evaluation:
- * - Precision Extractor for "Claim amount approved (After technical evaluation)"
+ * - Robust Regex & DOM Hybrid Extractor for "Claim amount approved (After technical evaluation)"
  * - Standard Clinical Justification Remarks formatting: "CASE OF ... AMOUNT IS Rs <amount>/-"
  * - Tier 1: Sequential Table row approvals ("Approve" across all rows)
  * - Tier 2: 3-Row Medical Evaluation Checklist ("Yes" radios)
@@ -509,42 +509,42 @@
   // =========================================================================
 
   /**
-   * Specifically extracts "Claim amount approved (After technical evaluation)"
+   * Hybrid Regex & DOM Extractor for "Claim amount approved (After technical evaluation)"
    */
   function extractClaimAmountApproved() {
-    const allTextElements = Array.from(document.querySelectorAll('p, span, div, td, b, strong'));
-    
-    // Priority 1: Exact match for "Claim amount approved (After technical evaluation)"
-    const targetLabel = allTextElements.find(el => {
-      const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+    const bodyText = document.body ? (document.body.innerText || '') : '';
+
+    // Primary: Regex search across full text body
+    const primaryRegex = /Claim\s+amount\s+approved\s*\(After\s+technical\s+evaluation\)\s*:?\s*[₹Rs.]*\s*([\d,]+\.?\d*)/i;
+    const m1 = bodyText.match(primaryRegex);
+    if (m1 && m1[1] && m1[1].trim() !== '') {
+      return m1[1].trim();
+    }
+
+    // Secondary: Search via DOM node traversal
+    const candidateNodes = Array.from(document.querySelectorAll('p, span, div, td')).filter(el => {
+      const t = (el.innerText || '').toLowerCase();
       return t.includes('claim amount approved') && t.includes('technical evaluation');
     });
 
-    if (targetLabel) {
-      const row = targetLabel.closest('.row, tr, div');
+    for (const node of candidateNodes) {
+      const row = node.closest('.row, tr, div');
       if (row) {
-        const siblingAmount = Array.from(row.querySelectorAll('p, span, div, td'))
-          .find(el => el !== targetLabel && (el.innerText.includes('₹') || el.innerText.includes('Rs') || /^\s*[\d,]+\.?\d*\s*$/.test(el.innerText)));
-        
-        if (siblingAmount) {
-          const match = siblingAmount.innerText.match(/[\d,]+\.?\d*/);
+        const siblingWithRupee = Array.from(row.querySelectorAll('p, span, div, td')).find(s => {
+          return s !== node && !node.contains(s) && (s.innerText.includes('₹') || s.innerText.includes('Rs'));
+        });
+        if (siblingWithRupee) {
+          const match = siblingWithRupee.innerText.match(/[\d,]+\.?\d*/);
           if (match && match[0]) return match[0].trim();
         }
       }
-
-      let next = targetLabel.parentElement?.nextElementSibling || targetLabel.nextElementSibling;
-      while (next) {
-        const match = (next.innerText || '').match(/(?:₹|Rs\.?)?\s*([\d,]+\.?\d*)/);
-        if (match && match[1]) return match[1].trim();
-        next = next.nextElementSibling;
-      }
     }
 
-    // Priority 2: Fallback to Total payable amount / Total Amount
-    for (const el of allTextElements) {
-      const text = el.innerText || el.textContent || '';
-      const match = text.match(/(?:Total payable amount|Amount Approved|Total Amount)[\s\S]*?[₹Rs.]\s*([\d,]+\.?\d*)/i);
-      if (match && match[1]) return match[1].trim();
+    // Fallback: Total payable amount regex
+    const fallbackRegex = /(?:Total\s+payable\s+amount|Amount\s+claimed\s+by\s+hospital)[\s\S]*?[₹Rs.]\s*([\d,]+\.?\d*)/i;
+    const m2 = bodyText.match(fallbackRegex);
+    if (m2 && m2[1]) {
+      return m2[1].trim();
     }
 
     return '';
@@ -565,7 +565,7 @@
     const approvedAmount = extractClaimAmountApproved();
     log.extractedAmount = approvedAmount;
 
-    // Determine Consultation vs Investigation based on Package Codes on the page
+    // Determine Consultation vs Investigation based on Package Codes
     const pageText = (document.body.innerText || '').toUpperCase();
     const isConsultation = pageText.includes('CONSULTATION') || pageText.includes('OPD') || /CN\d+/.test(pageText);
     
@@ -607,7 +607,7 @@
     const remarksResult = setCaseLevelRemarks();
 
     const isSuccess = tableResult.success && radioResult.success && caseActionResult.success;
-    const msg = `Approved ${tableResult.approvedCount}/${tableResult.totalTargeted} table rows, checked ${radioResult.checkedCount} Yes radios, set Case Action to "${caseActionResult.log?.finalText || 'Approve'}", and populated Remarks (${remarksResult.log?.extractedAmount ? 'Rs. ' + remarksResult.log.extractedAmount : 'Done'})!`;
+    const msg = `Approved ${tableResult.approvedCount}/${tableResult.totalTargeted} table rows, checked ${radioResult.checkedCount} Yes radios, set Case Action to "${caseActionResult.log?.finalText || 'Approve'}", and set Remarks to "${remarksResult.text}"!`;
     
     showOnScreenNotification('Full Approval Complete', msg, isSuccess);
 
@@ -700,5 +700,5 @@
     }
   });
 
-  console.log('[Data Entry Pro v1.2.6] Precision Amount Extractor Active.');
+  console.log('[Data Entry Pro v1.2.7] Ready.');
 })();

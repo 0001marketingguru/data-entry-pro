@@ -7,28 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.7] - 2026-08-21
+
+### Fixed
+- **Hybrid Regex & DOM Extractor for Evaluated Amount**: Eliminates parent-container traversal ambiguity by using global body regex matching directly against `"Claim amount approved (After technical evaluation) : ₹ <amount>"` (e.g. `4,306.00`).
+- **Standard Clinical Remarks**: Properly populates `CASE OF ... AMOUNT IS Rs. 4,306.00/-`.
+
+---
+
 ## [1.2.6] - 2026-08-21
 
 ### Added
-- **Precision Evaluated Amount Extractor (`extractClaimAmountApproved`)**:
-  - Specifically targets `"Claim amount approved (After technical evaluation)"` from the summary section.
-  - Automatically incorporates the exact evaluated rupees amount into the standard clinical justification remarks (e.g. `CASE OF ... AMOUNT IS Rs. 4,306.00/-`).
+- Precision amount extractor for evaluated amount.
 
 ---
 
 ## [1.2.5] - 2026-08-21
 
 ### Fixed
-- **Clean Lightweight Case-Level Action* Locator**: Directly isolates the non-table Action dropdown located above the Remarks textarea.
-- **Direct Event Simulation**: Simple, robust mousedown & click sequence to open and select `"Approve"`.
-
----
-
-## [1.2.1] - 2026-08-20
-
-### Added
-- **🎯 4-Tier Unified Approval Engine**:
-  - **Tier 1**: Sequential Table Row approvals (`"Approve"` across all rows).
-  - **Tier 2**: 3-Row Medical Evaluation Checklist (`"Yes"` radio buttons).
-  - **Tier 3**: Overall Case-Level Decision **`Action*`** dropdown (`"Approve"`).
-  - **Tier 4**: Standard Clinical Remarks Auto-Population (`"CASE OF INVESTIGATION SO FINAL APPROVAL AMOUNT IS Rs <amount>"`).
+- Clean lightweight Case-Level Action* Locator.
