@@ -1,7 +1,7 @@
-// Data Entry Pro v1.2.5 - Popup Controller with 4-Tier Reporting
+// Data Entry Pro v1.2.6 - Popup Controller with 4-Tier Reporting
 
 document.addEventListener('DOMContentLoaded', async () => {
-  const CURRENT_VERSION = 'v1.2.5';
+  const CURRENT_VERSION = 'v1.2.6';
   const GITHUB_REPO = '0001marketingguru/data-entry-pro';
 
   const detectionBox = document.getElementById('detectionBox');

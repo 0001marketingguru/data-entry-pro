@@ -1,12 +1,13 @@
 /**
- * Data Entry Pro v1.2.5 - Enterprise Claims UI Automation Content Script
+ * Data Entry Pro v1.2.6 - Enterprise Claims UI Automation Content Script
  * 
- * Clean, lightweight, and robust 4-Tier Claims Automation:
- * - Tier 1: Sequential Table Row approvals ("Approve" across all rows)
+ * Specifically optimized for PMJAY Payer Claims Evaluation:
+ * - Precision Extractor for "Claim amount approved (After technical evaluation)"
+ * - Standard Clinical Justification Remarks formatting: "CASE OF ... AMOUNT IS Rs <amount>/-"
+ * - Tier 1: Sequential Table row approvals ("Approve" across all rows)
  * - Tier 2: 3-Row Medical Evaluation Checklist ("Yes" radios)
  * - Tier 3: Case-Level Decision Action* dropdown ("Approve")
- * - Tier 4: Standard Clinical Justification Remarks auto-population
- * - Diagnostic Logger & Zero-Click Chrome Auto-Reload Bridge
+ * - Full Diagnostic Logger & Zero-Click Chrome Auto-Reload Bridge
  */
 
 (function () {
@@ -127,7 +128,6 @@
     let actionColIndex = -1;
     let targetRows = [];
 
-    // Table containing interactive React-Select or select elements
     for (const table of candidateTables) {
       const hasInteractiveControls = table.querySelector('.css-1nxbv4n-control, [class*="-control"], [class*="react-select"], select, [role="combobox"]');
       if (hasInteractiveControls) {
@@ -261,11 +261,9 @@
     try {
       reactSelectControl.scrollIntoView({ block: 'nearest', inline: 'nearest' });
       
-      // Click dropdown control to open menu
       reactSelectControl.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
       reactSelectControl.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
 
-      // Wait 70ms for React portal to mount
       await new Promise(r => setTimeout(r, 70));
 
       const menuOptions = Array.from(document.querySelectorAll('[class*="-option"], [role="option"], div[id*="option"]'));
@@ -441,12 +439,9 @@
   }
 
   // =========================================================================
-  // --- Section 6: Tier 3 - Case-Level Decision Action* Dropdown (5-Line Fix) ---
+  // --- Section 6: Tier 3 - Case-Level Decision Action* Dropdown ---
   // =========================================================================
 
-  /**
-   * Directly targets the Case Action dropdown located immediately above the Remarks box
-   */
   async function setCaseLevelActionToApprove() {
     const startTime = Date.now();
     const log = { target: 'case_level_action', status: 'pending', timeMs: 0 };
@@ -457,7 +452,6 @@
       return { success: false, log };
     }
 
-    // 1. Locate the dropdown right above the Remarks textarea (outside all tables)
     const section = textarea.closest('.row, form, div')?.parentElement || document.body;
     const nonTableControls = Array.from(section.querySelectorAll('.css-1nxbv4n-control, [class*="-control"], select')).filter(c => !c.closest('table'));
     const targetControl = nonTableControls.pop() || Array.from(document.querySelectorAll('.css-1nxbv4n-control, [class*="-control"]')).filter(c => !c.closest('table')).pop();
@@ -471,14 +465,11 @@
       highlightElement(targetControl);
       targetControl.scrollIntoView({ block: 'center' });
 
-      // 2. Click to open dropdown
       targetControl.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
       targetControl.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
 
-      // 3. Wait micro-tick for menu options to appear
       await new Promise(r => setTimeout(r, 90));
 
-      // 4. Find and click "Approve" option
       const menuOptions = Array.from(document.querySelectorAll('[class*="-option"], [role="option"], div'));
       const approveOption = menuOptions.find(el => {
         const t = (el.innerText || el.textContent || '').trim().toLowerCase();
@@ -490,7 +481,6 @@
         approveOption.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
         log.status = 'approved';
       } else {
-        // Fallback: Dispatch Enter on combobox input
         const input = targetControl.querySelector('input');
         if (input) {
           input.focus();
@@ -515,12 +505,54 @@
   }
 
   // =========================================================================
-  // --- Section 7: Tier 4 - Standard Clinical Remarks Auto-Population ---
+  // --- Section 7: Tier 4 - Precision Summary Amount Extractor & Remarks ---
   // =========================================================================
+
+  /**
+   * Specifically extracts "Claim amount approved (After technical evaluation)"
+   */
+  function extractClaimAmountApproved() {
+    const allTextElements = Array.from(document.querySelectorAll('p, span, div, td, b, strong'));
+    
+    // Priority 1: Exact match for "Claim amount approved (After technical evaluation)"
+    const targetLabel = allTextElements.find(el => {
+      const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+      return t.includes('claim amount approved') && t.includes('technical evaluation');
+    });
+
+    if (targetLabel) {
+      const row = targetLabel.closest('.row, tr, div');
+      if (row) {
+        const siblingAmount = Array.from(row.querySelectorAll('p, span, div, td'))
+          .find(el => el !== targetLabel && (el.innerText.includes('₹') || el.innerText.includes('Rs') || /^\s*[\d,]+\.?\d*\s*$/.test(el.innerText)));
+        
+        if (siblingAmount) {
+          const match = siblingAmount.innerText.match(/[\d,]+\.?\d*/);
+          if (match && match[0]) return match[0].trim();
+        }
+      }
+
+      let next = targetLabel.parentElement?.nextElementSibling || targetLabel.nextElementSibling;
+      while (next) {
+        const match = (next.innerText || '').match(/(?:₹|Rs\.?)?\s*([\d,]+\.?\d*)/);
+        if (match && match[1]) return match[1].trim();
+        next = next.nextElementSibling;
+      }
+    }
+
+    // Priority 2: Fallback to Total payable amount / Total Amount
+    for (const el of allTextElements) {
+      const text = el.innerText || el.textContent || '';
+      const match = text.match(/(?:Total payable amount|Amount Approved|Total Amount)[\s\S]*?[₹Rs.]\s*([\d,]+\.?\d*)/i);
+      if (match && match[1]) return match[1].trim();
+    }
+
+    return '';
+  }
 
   function setCaseLevelRemarks() {
     const startTime = Date.now();
-    const log = { target: 'case_level_remarks', status: 'pending', text: '', timeMs: 0 };
+    const log = { target: 'case_level_remarks', status: 'pending', text: '', extractedAmount: '', timeMs: 0 };
 
     const textarea = document.querySelector('textarea.form-control, textarea[placeholder*="Type here"], textarea[maxlength="500"], textarea');
     if (!textarea) {
@@ -529,26 +561,11 @@
       return { success: false, log };
     }
 
-    let approvedAmount = '';
-    const allTextBlocks = Array.from(document.querySelectorAll('span, p, div, td, b, strong'));
-    
-    for (const el of allTextBlocks) {
-      const text = el.innerText || el.textContent || '';
-      const match = text.match(/(?:Claim amount approved|Total payable amount|Amount Approved|Total Amount)[\s\S]*?[₹Rs.]\s*([\d,]+\.?\d*)/i);
-      if (match && match[1]) {
-        approvedAmount = match[1].trim();
-        break;
-      }
-    }
+    // Extract exact evaluated amount
+    const approvedAmount = extractClaimAmountApproved();
+    log.extractedAmount = approvedAmount;
 
-    if (!approvedAmount) {
-      const amountApprovedTds = Array.from(document.querySelectorAll('td')).filter(td => td.innerText.includes('₹'));
-      if (amountApprovedTds.length > 0) {
-        const lastVal = amountApprovedTds[amountApprovedTds.length - 1].innerText.replace(/[₹,\s]/g, '').trim();
-        if (lastVal && !isNaN(lastVal)) approvedAmount = lastVal;
-      }
-    }
-
+    // Determine Consultation vs Investigation based on Package Codes on the page
     const pageText = (document.body.innerText || '').toUpperCase();
     const isConsultation = pageText.includes('CONSULTATION') || pageText.includes('OPD') || /CN\d+/.test(pageText);
     
@@ -586,11 +603,11 @@
     // Tier 3: Case-Level Action* Dropdown -> "Approve"
     const caseActionResult = await setCaseLevelActionToApprove();
 
-    // Tier 4: Remarks Auto-Population
+    // Tier 4: Remarks Auto-Population with Technical Evaluation Amount
     const remarksResult = setCaseLevelRemarks();
 
     const isSuccess = tableResult.success && radioResult.success && caseActionResult.success;
-    const msg = `Approved ${tableResult.approvedCount}/${tableResult.totalTargeted} table rows, checked ${radioResult.checkedCount} Yes radios, set Case Action to "${caseActionResult.log?.finalText || 'Approve'}", and added Remarks!`;
+    const msg = `Approved ${tableResult.approvedCount}/${tableResult.totalTargeted} table rows, checked ${radioResult.checkedCount} Yes radios, set Case Action to "${caseActionResult.log?.finalText || 'Approve'}", and populated Remarks (${remarksResult.log?.extractedAmount ? 'Rs. ' + remarksResult.log.extractedAmount : 'Done'})!`;
     
     showOnScreenNotification('Full Approval Complete', msg, isSuccess);
 
@@ -620,6 +637,7 @@
     checkYesRadioButtons,
     setCaseLevelActionToApprove,
     setCaseLevelRemarks,
+    extractClaimAmountApproved,
     runDataEntryProAutomation,
     getLastReport: () => window.__DATA_ENTRY_PRO_LAST_RUN__ || null
   };
@@ -682,5 +700,5 @@
     }
   });
 
-  console.log('[Data Entry Pro v1.2.5] Ready.');
+  console.log('[Data Entry Pro v1.2.6] Precision Amount Extractor Active.');
 })();

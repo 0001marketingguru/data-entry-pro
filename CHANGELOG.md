@@ -7,18 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.6] - 2026-08-21
+
+### Added
+- **Precision Evaluated Amount Extractor (`extractClaimAmountApproved`)**:
+  - Specifically targets `"Claim amount approved (After technical evaluation)"` from the summary section.
+  - Automatically incorporates the exact evaluated rupees amount into the standard clinical justification remarks (e.g. `CASE OF ... AMOUNT IS Rs. 4,306.00/-`).
+
+---
+
 ## [1.2.5] - 2026-08-21
 
 ### Fixed
 - **Clean Lightweight Case-Level Action* Locator**: Directly isolates the non-table Action dropdown located above the Remarks textarea.
 - **Direct Event Simulation**: Simple, robust mousedown & click sequence to open and select `"Approve"`.
-
----
-
-## [1.2.4] - 2026-08-21
-
-### Fixed
-- **Document Position Case-Level Action* Locator**: Pinpointed the bottom case decision dropdown using DOM relative position.
 
 ---
 
