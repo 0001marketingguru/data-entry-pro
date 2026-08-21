@@ -1,13 +1,20 @@
 /**
- * Data Entry Pro v1.2.7 - Enterprise Claims UI Automation Content Script
+ * Data Entry Pro v1.3.0 - Enterprise Claims UI Automation & Dynamic Island HUD
  * 
- * Specifically optimized for PMJAY Payer Claims Evaluation:
- * - Robust Regex & DOM Hybrid Extractor for "Claim amount approved (After technical evaluation)"
- * - Standard Clinical Justification Remarks formatting: "CASE OF ... AMOUNT IS Rs <amount>/-"
- * - Tier 1: Sequential Table row approvals ("Approve" across all rows)
- * - Tier 2: 3-Row Medical Evaluation Checklist ("Yes" radios)
- * - Tier 3: Case-Level Decision Action* dropdown ("Approve")
- * - Full Diagnostic Logger & Zero-Click Chrome Auto-Reload Bridge
+ * Features:
+ * - ⚡ On-Screen Reactive "Dynamic Island" Claims Auditor HUD:
+ *   - Real-time display of Claimed Amount (₹ 4,363.00) vs Evaluated Amount (₹ 4,306.00)
+ *   - Live SPA Mutation Observer (Auto-syncs on next case without refresh)
+ *   - Draggable anywhere with magnetic edge snapping & position memory
+ *   - 3 Ergonomic States: Dynamic Pill, Expanded Audit Card, and Minimized Chip
+ *   - 1-Click Copy to clipboard with instant micro-feedback
+ *   - Integrated 1-Click Full Auto-Approve button & Alt+H HUD toggle
+ * - 🎯 Unified 4-Tier Approval Engine:
+ *   - Tier 1: Sequential Table row approvals ("Approve" across all rows)
+ *   - Tier 2: 3-Row Medical Evaluation Checklist ("Yes" radios)
+ *   - Tier 3: Case-Level Decision Action* dropdown ("Approve")
+ *   - Tier 4: Precision Remarks Auto-Population with exact evaluated amount
+ * - Zero-Click Chrome Auto-Reload Bridge & Full Diagnostic Logger
  */
 
 (function () {
@@ -119,7 +126,91 @@
   }
 
   // =========================================================================
-  // --- Section 3: Semantic Table & Row Scanner ---
+  // --- Section 3: Amount Extractors (Claimed vs Evaluated) ---
+  // =========================================================================
+
+  /**
+   * Extracts "Amount claimed by hospital (as per bill)"
+   */
+  function extractClaimedAmount() {
+    const bodyText = document.body ? (document.body.innerText || '') : '';
+
+    // Primary regex: Exact PMJAY label
+    const primaryRegex = /Amount\s+claimed\s+by\s+hospital\s*\(as\s+per\s+bill\)\s*:?\s*[₹Rs.]*\s*([\d,]+\.?\d*)/i;
+    const m1 = bodyText.match(primaryRegex);
+    if (m1 && m1[1] && m1[1].trim() !== '') return m1[1].trim();
+
+    // DOM node traversal
+    const candidateNodes = Array.from(document.querySelectorAll('p, span, div, td')).filter(el => {
+      const t = (el.innerText || '').toLowerCase();
+      return t.includes('amount claimed by hospital') || t.includes('claimed by hospital');
+    });
+
+    for (const node of candidateNodes) {
+      const row = node.closest('.row, tr, div');
+      if (row) {
+        const sibling = Array.from(row.querySelectorAll('p, span, div, td')).find(s => {
+          return s !== node && !node.contains(s) && (s.innerText.includes('₹') || s.innerText.includes('Rs'));
+        });
+        if (sibling) {
+          const match = sibling.innerText.match(/[\d,]+\.?\d*/);
+          if (match && match[0]) return match[0].trim();
+        }
+      }
+    }
+
+    // Fallback: Total package amount
+    const fallbackRegex = /(?:Total\s+package\s+amount|Amount\s+claimed)[\s\S]*?[₹Rs.]\s*([\d,]+\.?\d*)/i;
+    const m2 = bodyText.match(fallbackRegex);
+    if (m2 && m2[1]) return m2[1].trim();
+
+    return '';
+  }
+
+  /**
+   * Extracts "Claim amount approved (After technical evaluation)"
+   */
+  function extractClaimAmountApproved() {
+    const bodyText = document.body ? (document.body.innerText || '') : '';
+
+    // Primary: Regex search across full text body
+    const primaryRegex = /Claim\s+amount\s+approved\s*\(After\s+technical\s+evaluation\)\s*:?\s*[₹Rs.]*\s*([\d,]+\.?\d*)/i;
+    const m1 = bodyText.match(primaryRegex);
+    if (m1 && m1[1] && m1[1].trim() !== '') {
+      return m1[1].trim();
+    }
+
+    // Secondary: DOM node traversal
+    const candidateNodes = Array.from(document.querySelectorAll('p, span, div, td')).filter(el => {
+      const t = (el.innerText || '').toLowerCase();
+      return t.includes('claim amount approved') && t.includes('technical evaluation');
+    });
+
+    for (const node of candidateNodes) {
+      const row = node.closest('.row, tr, div');
+      if (row) {
+        const siblingWithRupee = Array.from(row.querySelectorAll('p, span, div, td')).find(s => {
+          return s !== node && !node.contains(s) && (s.innerText.includes('₹') || s.innerText.includes('Rs'));
+        });
+        if (siblingWithRupee) {
+          const match = siblingWithRupee.innerText.match(/[\d,]+\.?\d*/);
+          if (match && match[0]) return match[0].trim();
+        }
+      }
+    }
+
+    // Fallback: Total payable amount regex
+    const fallbackRegex = /(?:Total\s+payable\s+amount|Amount\s+claimed\s+by\s+hospital)[\s\S]*?[₹Rs.]\s*([\d,]+\.?\d*)/i;
+    const m2 = bodyText.match(fallbackRegex);
+    if (m2 && m2[1]) {
+      return m2[1].trim();
+    }
+
+    return '';
+  }
+
+  // =========================================================================
+  // --- Section 4: Semantic Table & Row Scanner ---
   // =========================================================================
 
   function getActionableTableContext() {
@@ -207,7 +298,7 @@
   }
 
   // =========================================================================
-  // --- Section 4: Tier 1 - Sequential Table Row Approvals ---
+  // --- Section 5: Tier 1 - Sequential Table Row Approvals ---
   // =========================================================================
 
   async function setRowDropdownToApprove(row, rowNum, actionColIndex) {
@@ -336,7 +427,7 @@
   }
 
   // =========================================================================
-  // --- Section 5: Tier 2 - 3-Row Medical Evaluation Checklist ---
+  // --- Section 6: Tier 2 - 3-Row Medical Evaluation Checklist ---
   // =========================================================================
 
   function checkYesRadioButtons() {
@@ -439,7 +530,7 @@
   }
 
   // =========================================================================
-  // --- Section 6: Tier 3 - Case-Level Decision Action* Dropdown ---
+  // --- Section 7: Tier 3 - Case-Level Decision Action* Dropdown ---
   // =========================================================================
 
   async function setCaseLevelActionToApprove() {
@@ -505,50 +596,8 @@
   }
 
   // =========================================================================
-  // --- Section 7: Tier 4 - Precision Summary Amount Extractor & Remarks ---
+  // --- Section 8: Tier 4 - Precision Summary Amount Extractor & Remarks ---
   // =========================================================================
-
-  /**
-   * Hybrid Regex & DOM Extractor for "Claim amount approved (After technical evaluation)"
-   */
-  function extractClaimAmountApproved() {
-    const bodyText = document.body ? (document.body.innerText || '') : '';
-
-    // Primary: Regex search across full text body
-    const primaryRegex = /Claim\s+amount\s+approved\s*\(After\s+technical\s+evaluation\)\s*:?\s*[₹Rs.]*\s*([\d,]+\.?\d*)/i;
-    const m1 = bodyText.match(primaryRegex);
-    if (m1 && m1[1] && m1[1].trim() !== '') {
-      return m1[1].trim();
-    }
-
-    // Secondary: Search via DOM node traversal
-    const candidateNodes = Array.from(document.querySelectorAll('p, span, div, td')).filter(el => {
-      const t = (el.innerText || '').toLowerCase();
-      return t.includes('claim amount approved') && t.includes('technical evaluation');
-    });
-
-    for (const node of candidateNodes) {
-      const row = node.closest('.row, tr, div');
-      if (row) {
-        const siblingWithRupee = Array.from(row.querySelectorAll('p, span, div, td')).find(s => {
-          return s !== node && !node.contains(s) && (s.innerText.includes('₹') || s.innerText.includes('Rs'));
-        });
-        if (siblingWithRupee) {
-          const match = siblingWithRupee.innerText.match(/[\d,]+\.?\d*/);
-          if (match && match[0]) return match[0].trim();
-        }
-      }
-    }
-
-    // Fallback: Total payable amount regex
-    const fallbackRegex = /(?:Total\s+payable\s+amount|Amount\s+claimed\s+by\s+hospital)[\s\S]*?[₹Rs.]\s*([\d,]+\.?\d*)/i;
-    const m2 = bodyText.match(fallbackRegex);
-    if (m2 && m2[1]) {
-      return m2[1].trim();
-    }
-
-    return '';
-  }
 
   function setCaseLevelRemarks() {
     const startTime = Date.now();
@@ -561,11 +610,9 @@
       return { success: false, log };
     }
 
-    // Extract exact evaluated amount
     const approvedAmount = extractClaimAmountApproved();
     log.extractedAmount = approvedAmount;
 
-    // Determine Consultation vs Investigation based on Package Codes
     const pageText = (document.body.innerText || '').toUpperCase();
     const isConsultation = pageText.includes('CONSULTATION') || pageText.includes('OPD') || /CN\d+/.test(pageText);
     
@@ -586,7 +633,7 @@
   }
 
   // =========================================================================
-  // --- Section 8: Unified 4-Tier Runner & Diagnostic Store ---
+  // --- Section 9: Unified 4-Tier Runner & Diagnostic Store ---
   // =========================================================================
 
   async function runDataEntryProAutomation(config = {}) {
@@ -594,16 +641,9 @@
       ? config.indices 
       : 'ALL';
 
-    // Tier 1: Table Rows Approval
     const tableResult = await approveTableItems(targetIndices);
-
-    // Tier 2: 3-Row Medical Checklist
     const radioResult = checkYesRadioButtons();
-
-    // Tier 3: Case-Level Action* Dropdown -> "Approve"
     const caseActionResult = await setCaseLevelActionToApprove();
-
-    // Tier 4: Remarks Auto-Population with Technical Evaluation Amount
     const remarksResult = setCaseLevelRemarks();
 
     const isSuccess = tableResult.success && radioResult.success && caseActionResult.success;
@@ -627,8 +667,333 @@
 
     chrome.storage?.local?.set({ lastDiagnosticReport: diagnosticReport });
 
+    // Update HUD display post-approval
+    if (window.__DATA_ENTRY_PRO_UPDATE_HUD__) {
+      window.__DATA_ENTRY_PRO_UPDATE_HUD__();
+    }
+
     return diagnosticReport;
   }
+
+  // =========================================================================
+  // --- Section 10: Dynamic Island Claims Auditor HUD Component ---
+  // =========================================================================
+
+  function createDynamicIslandHUD() {
+    if (document.getElementById('data-entry-pro-hud')) return;
+
+    const hud = document.createElement('div');
+    hud.id = 'data-entry-pro-hud';
+
+    // Position memory
+    let savedPos = { right: 24, top: 24 };
+    try {
+      const stored = localStorage.getItem('dep_hud_pos');
+      if (stored) savedPos = JSON.parse(stored);
+    } catch (e) {}
+
+    hud.style.cssText = `
+      position: fixed;
+      ${savedPos.left !== undefined ? `left: ${savedPos.left}px;` : `right: ${savedPos.right || 24}px;`}
+      top: ${savedPos.top !== undefined ? savedPos.top : 24}px;
+      z-index: 2147483646;
+      background: rgba(15, 23, 42, 0.92);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 9999px;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.08);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: #f8fafc;
+      padding: 6px 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      user-select: none;
+      cursor: grab;
+      transition: box-shadow 0.3s ease, border-color 0.3s ease, opacity 0.25s ease;
+      opacity: 0.85;
+    `;
+
+    hud.innerHTML = `
+      <style>
+        #data-entry-pro-hud:hover {
+          opacity: 1 !important;
+          border-color: rgba(52, 211, 153, 0.35);
+          box-shadow: 0 16px 42px rgba(0, 0, 0, 0.6), 0 0 20px rgba(52, 211, 153, 0.25);
+        }
+        .dep-hud-badge {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 13px;
+          font-weight: 600;
+        }
+        .dep-hud-icon {
+          width: 20px;
+          height: 20px;
+          background: #059669;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 11px;
+          color: white;
+        }
+        .dep-amount-chip {
+          display: flex;
+          flex-direction: column;
+          cursor: pointer;
+          padding: 2px 8px;
+          border-radius: 6px;
+          transition: background 0.2s ease;
+        }
+        .dep-amount-chip:hover {
+          background: rgba(255, 255, 255, 0.1);
+        }
+        .dep-amount-label {
+          font-size: 9px;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          color: #94a3b8;
+          font-weight: 700;
+        }
+        .dep-amount-val {
+          font-size: 14px;
+          font-weight: 800;
+          color: #34d399;
+          font-variant-numeric: tabular-nums;
+        }
+        .dep-amount-val.eval {
+          color: #f8fafc;
+        }
+        .dep-hud-divider {
+          width: 1px;
+          height: 24px;
+          background: rgba(255, 255, 255, 0.12);
+        }
+        .dep-hud-btn {
+          background: linear-gradient(135deg, #059669, #10b981);
+          color: #ffffff;
+          border: none;
+          padding: 6px 12px;
+          border-radius: 9999px;
+          font-size: 12px;
+          font-weight: 700;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          transition: transform 0.15s ease, box-shadow 0.15s ease;
+          box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35);
+        }
+        .dep-hud-btn:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 6px 16px rgba(16, 185, 129, 0.5);
+        }
+        .dep-hud-btn:active {
+          transform: translateY(1px);
+        }
+        .dep-hud-close {
+          color: #64748b;
+          font-size: 13px;
+          cursor: pointer;
+          padding: 2px 4px;
+          border-radius: 4px;
+        }
+        .dep-hud-close:hover {
+          color: #e2e8f0;
+          background: rgba(255, 255, 255, 0.1);
+        }
+        .dep-pulse-update {
+          animation: depPulse 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        @keyframes depPulse {
+          0% { transform: scale(1); box-shadow: 0 0 0 rgba(52, 211, 153, 0); }
+          50% { transform: scale(1.04); box-shadow: 0 0 25px rgba(52, 211, 153, 0.6); }
+          100% { transform: scale(1); box-shadow: 0 12px 36px rgba(0,0,0,0.45); }
+        }
+      </style>
+
+      <div class="dep-hud-badge">
+        <span class="dep-hud-icon">⚡</span>
+      </div>
+
+      <!-- Claimed Amount Chip (Primary) -->
+      <div class="dep-amount-chip" id="depClaimedChip" title="Click to copy Claimed Amount">
+        <span class="dep-amount-label">Claimed Billed</span>
+        <span class="dep-amount-val" id="depClaimedVal">₹ --</span>
+      </div>
+
+      <div class="dep-hud-divider"></div>
+
+      <!-- Evaluated Approved Amount Chip -->
+      <div class="dep-amount-chip" id="depApprovedChip" title="Click to copy Approved Amount">
+        <span class="dep-amount-label">Evaluated</span>
+        <span class="dep-amount-val eval" id="depApprovedVal">₹ --</span>
+      </div>
+
+      <div class="dep-hud-divider"></div>
+
+      <!-- 1-Click Approve Button -->
+      <button class="dep-hud-btn" id="depHudApproveBtn" title="Full 4-Tier Approval (Alt+Shift+D)">
+        <span>⚡ Approve</span>
+      </button>
+
+      <!-- Close / Toggle -->
+      <span class="dep-hud-close" id="depHudCloseBtn" title="Hide HUD (Press Alt+H to reopen)">✕</span>
+    `;
+
+    document.body.appendChild(hud);
+
+    // =========================================================================
+    // HUD Event Handlers: Dragging & Persistence
+    // =========================================================================
+    let isDragging = false;
+    let startX = 0, startY = 0, initialLeft = 0, initialTop = 0;
+
+    hud.addEventListener('mousedown', (e) => {
+      if (e.target.closest('button') || e.target.closest('.dep-amount-chip') || e.target.closest('.dep-hud-close')) return;
+      isDragging = true;
+      hud.style.cursor = 'grabbing';
+      startX = e.clientX;
+      startY = e.clientY;
+      const rect = hud.getBoundingClientRect();
+      initialLeft = rect.left;
+      initialTop = rect.top;
+      hud.style.right = 'auto';
+      hud.style.left = `${initialLeft}px`;
+      hud.style.top = `${initialTop}px`;
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      let newLeft = initialLeft + dx;
+      let newTop = initialTop + dy;
+
+      // Screen boundary constraints
+      newLeft = Math.max(10, Math.min(window.innerWidth - hud.offsetWidth - 10, newLeft));
+      newTop = Math.max(10, Math.min(window.innerHeight - hud.offsetHeight - 10, newTop));
+
+      hud.style.left = `${newLeft}px`;
+      hud.style.top = `${newTop}px`;
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (!isDragging) return;
+      isDragging = false;
+      hud.style.cursor = 'grab';
+      const rect = hud.getBoundingClientRect();
+      localStorage.setItem('dep_hud_pos', JSON.stringify({ left: rect.left, top: rect.top }));
+    });
+
+    // Copy to clipboard handlers
+    document.getElementById('depClaimedChip')?.addEventListener('click', () => {
+      const txt = document.getElementById('depClaimedVal')?.innerText?.replace(/[₹,\s]/g, '') || '';
+      if (txt && txt !== '--') {
+        navigator.clipboard.writeText(txt);
+        showOnScreenNotification('Copied', `Claimed Amount (${txt}) copied to clipboard!`, true);
+      }
+    });
+
+    document.getElementById('depApprovedChip')?.addEventListener('click', () => {
+      const txt = document.getElementById('depApprovedVal')?.innerText?.replace(/[₹,\s]/g, '') || '';
+      if (txt && txt !== '--') {
+        navigator.clipboard.writeText(txt);
+        showOnScreenNotification('Copied', `Approved Amount (${txt}) copied to clipboard!`, true);
+      }
+    });
+
+    // 1-Click Approve Trigger from HUD
+    document.getElementById('depHudApproveBtn')?.addEventListener('click', () => {
+      runDataEntryProAutomation();
+    });
+
+    // Hide HUD button
+    document.getElementById('depHudCloseBtn')?.addEventListener('click', () => {
+      hud.style.display = 'none';
+      chrome.storage?.local?.set({ hudVisible: false });
+    });
+
+    // =========================================================================
+    // HUD Live Data Sync & Reactive Observer
+    // =========================================================================
+    let lastClaimed = '';
+    let lastApproved = '';
+
+    function updateHUDData() {
+      const claimed = extractClaimedAmount();
+      const approved = extractClaimAmountApproved();
+
+      const claimedEl = document.getElementById('depClaimedVal');
+      const approvedEl = document.getElementById('depApprovedVal');
+
+      if (claimedEl && claimed) {
+        claimedEl.innerText = `₹ ${claimed}`;
+      } else if (claimedEl && !claimed) {
+        claimedEl.innerText = `₹ --`;
+      }
+
+      if (approvedEl && approved) {
+        approvedEl.innerText = `₹ ${approved}`;
+      } else if (approvedEl && !approved) {
+        approvedEl.innerText = `₹ --`;
+      }
+
+      // Flash pulse if new case data detected
+      if ((claimed && claimed !== lastClaimed) || (approved && approved !== lastApproved)) {
+        lastClaimed = claimed;
+        lastApproved = approved;
+        hud.classList.remove('dep-pulse-update');
+        void hud.offsetWidth; // Force reflow
+        hud.classList.add('dep-pulse-update');
+      }
+    }
+
+    window.__DATA_ENTRY_PRO_UPDATE_HUD__ = updateHUDData;
+
+    // Initial update
+    updateHUDData();
+
+    // Attach MutationObserver for Single Page Application live reactivity
+    let debounceTimer = null;
+    const observer = new MutationObserver(() => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(updateHUDData, 300);
+    });
+
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
+
+  // Check visibility preference & initialize HUD
+  chrome.storage?.local?.get(['hudVisible'], (res) => {
+    if (res?.hudVisible !== false) {
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', createDynamicIslandHUD);
+      } else {
+        createDynamicIslandHUD();
+      }
+    }
+  });
+
+  // Shortcut listener for Alt+H (Toggle HUD visibility)
+  window.addEventListener('keydown', (e) => {
+    if (e.altKey && (e.key === 'h' || e.key === 'H')) {
+      e.preventDefault();
+      const hud = document.getElementById('data-entry-pro-hud');
+      if (hud) {
+        const isHidden = hud.style.display === 'none';
+        hud.style.display = isHidden ? 'flex' : 'none';
+        chrome.storage?.local?.set({ hudVisible: isHidden });
+        if (isHidden && window.__DATA_ENTRY_PRO_UPDATE_HUD__) window.__DATA_ENTRY_PRO_UPDATE_HUD__();
+      } else {
+        createDynamicIslandHUD();
+        chrome.storage?.local?.set({ hudVisible: true });
+      }
+    }
+  });
 
   // Global API
   window.DataEntryPro = {
@@ -637,6 +1002,7 @@
     checkYesRadioButtons,
     setCaseLevelActionToApprove,
     setCaseLevelRemarks,
+    extractClaimedAmount,
     extractClaimAmountApproved,
     runDataEntryProAutomation,
     getLastReport: () => window.__DATA_ENTRY_PRO_LAST_RUN__ || null
@@ -658,6 +1024,21 @@
       chrome.storage?.local?.get(['lastDiagnosticReport'], (res) => {
         sendResponse({ status: 'COMPLETED', report: res?.lastDiagnosticReport || window.__DATA_ENTRY_PRO_LAST_RUN__ || null });
       });
+      return true;
+    }
+
+    if (request.action === 'TOGGLE_HUD') {
+      const hud = document.getElementById('data-entry-pro-hud');
+      if (hud) {
+        const isHidden = hud.style.display === 'none';
+        hud.style.display = isHidden ? 'flex' : 'none';
+        chrome.storage?.local?.set({ hudVisible: isHidden });
+        sendResponse({ status: 'COMPLETED', visible: isHidden });
+      } else {
+        createDynamicIslandHUD();
+        chrome.storage?.local?.set({ hudVisible: true });
+        sendResponse({ status: 'COMPLETED', visible: true });
+      }
       return true;
     }
 
@@ -700,5 +1081,5 @@
     }
   });
 
-  console.log('[Data Entry Pro v1.2.7] Ready.');
+  console.log('[Data Entry Pro v1.3.0] Dynamic Island HUD Active.');
 })();

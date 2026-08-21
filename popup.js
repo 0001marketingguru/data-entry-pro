@@ -1,7 +1,7 @@
-// Data Entry Pro v1.2.7 - Popup Controller with 4-Tier Reporting
+// Data Entry Pro v1.3.0 - Popup Controller with Dynamic Island HUD & 4-Tier Reporting
 
 document.addEventListener('DOMContentLoaded', async () => {
-  const CURRENT_VERSION = 'v1.2.7';
+  const CURRENT_VERSION = 'v1.3.0';
   const GITHUB_REPO = '0001marketingguru/data-entry-pro';
 
   const detectionBox = document.getElementById('detectionBox');
@@ -14,6 +14,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const approveTableOnlyBtn = document.getElementById('approveTableOnlyBtn');
   const approveTableOnlyLabel = document.getElementById('approveTableOnlyLabel');
   const checkRadiosOnlyBtn = document.getElementById('checkRadiosOnlyBtn');
+  const toggleHudBtn = document.getElementById('toggleHudBtn');
   const indicesInput = document.getElementById('indicesInput');
   const approveCustomBtn = document.getElementById('approveCustomBtn');
   const statusBox = document.getElementById('statusBox');
@@ -156,7 +157,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // 6. Custom Indices Run
+  // 6. Toggle HUD Button
+  toggleHudBtn?.addEventListener('click', async () => {
+    const activeTabId = await getActiveTabId();
+    if (!activeTabId) return;
+
+    chrome.tabs.sendMessage(activeTabId, { action: 'TOGGLE_HUD' }, (res) => {
+      if (chrome.runtime.lastError) {
+        showStatus('HUD Toggle', 'Please refresh the case tab to activate HUD.', false);
+        return;
+      }
+      if (res?.status === 'COMPLETED') {
+        showStatus('HUD Updated', `Auditor HUD is now ${res.visible ? 'Visible' : 'Hidden'}. (Shortcut: Alt+H)`, true);
+      }
+    });
+  });
+
+  // 7. Custom Indices Run
   approveCustomBtn.addEventListener('click', async () => {
     const val = indicesInput.value.trim();
     const indices = parseIndices(val);
@@ -182,7 +199,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // 7. Copy Diagnostic Log to Clipboard
+  // 8. Copy Diagnostic Log to Clipboard
   copyDiagnosticBtn.addEventListener('click', async () => {
     const activeTabId = await getActiveTabId();
     if (!activeTabId) return;
