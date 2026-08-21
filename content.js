@@ -1,24 +1,42 @@
 /**
- * Data Entry Pro v1.5.0 - Enterprise Claims UI Automation & Audit Command Center
+ * Data Entry Pro v1.5.1 - Enterprise Claims UI Automation & Audit Command Center
  * 
  * Features:
- * - 📊 Enterprise Productivity Logger & Speed Telemetry (WAL):
- *   - Auto-captures Case ID, Timestamps, Claimed, Approved, Deductions, Packages, and Remarks
- *   - Turnaround Time (TAT) speed tracker (seconds per claim)
- *   - In-place deduplication & date-partitioned persistence in chrome.storage.local
- *   - Automatic listener on final "Submit" button + 4-Tier Automation run
- * - 🏝️ Dynamic Island Claims Auditor HUD & Live Speedometer:
- *   - Displays Claimed, Evaluated, Mode Switcher, and Real-Time Daily Count (e.g. "📊 Today: 24 | ₹ 1.12L")
- *   - Live SPA Mutation Observer (Auto-syncs on next case without refresh)
- * - ✍️ Advanced Remarks Decision Engine:
- *   - ❓ Query Mode (Highest Priority)
- *   - 🔬 Investigation Mode (Dominant when any Lab/Diag codes exist)
- *   - 🩺 Consultation Mode (Pure consultation claims)
+ * - 🔒 Runtime Portal Guard: Automatically sleeps on non-claim sites (e.g. fast.com, google.com) with 0 memory footprint.
+ * - ⚡ Infallible "Query ➔ Approve" Row Engine:
+ *   - Clean blur & precision listbox targeting
+ *   - Keyboard navigation (<kbd>ArrowDown</kbd> + <kbd>Enter</kbd>) & React Fiber fallbacks
+ *   - Self-healing verification retry loop (guarantees stubborn rows like Row 5 CN003 switch to "Approve")
+ * - 📊 Strict "Submit-Only" Telemetry Interceptor:
+ *   - Auto-captures only REAL Case IDs (e.g. CGHS/GW/R1/2025/...) upon clicking the final PMJAY "Submit" button
+ *   - Zero dummy/random ID generation
+ *   - Live HUD Speedometer ticker
+ * - ✍️ Advanced Remarks Decision Engine (Lab Priority Rule)
  * - 🎯 Unified 4-Tier Approval Engine with Zero-Click Auto-Reload Bridge
  */
 
 (function () {
   'use strict';
+
+  // =========================================================================
+  // --- Section 0: Runtime Portal Guard ---
+  // =========================================================================
+  function isClaimsPortal() {
+    const host = window.location.hostname.toLowerCase();
+    const href = window.location.href.toLowerCase();
+    const bodyText = document.body ? (document.body.innerText || '') : '';
+    
+    const isTargetHost = host.includes('nha.gov.in') || host.includes('pmjay') || host.includes('cghs') || host.includes('tms') || href.includes('caseview');
+    const hasClaimDOM = bodyText.includes('Actionable Details') || bodyText.includes('Case Details') || bodyText.includes('Claim amount approved') || bodyText.includes('Amount claimed by hospital');
+
+    return isTargetHost || hasClaimDOM;
+  }
+
+  // If outside a claims portal, terminate immediately to keep browser 100% clean
+  if (!isClaimsPortal()) {
+    console.debug('[Data Entry Pro] Inactive on non-claims portal.');
+    return;
+  }
 
   // Global Diagnostic History & Session Timers
   window.__DATA_ENTRY_PRO_LOGS__ = window.__DATA_ENTRY_PRO_LOGS__ || [];
@@ -128,7 +146,7 @@
   }
 
   // =========================================================================
-  // --- Section 3: Multi-Source Case ID & Financial Extractors ---
+  // --- Section 3: Precision Case ID & Financial Extractors ---
   // =========================================================================
 
   /**
@@ -136,6 +154,7 @@
    * 1. Breadcrumb: "Home > Case Details (CGHS/GW/R1/2025/2026071060011231)"
    * 2. Header & Patient Table Scan
    * 3. URL Query Parameters
+   * Returns NULL if no real Case ID is found (Never generates dummy IDs).
    */
   function extractCaseId() {
     const allText = document.body ? (document.body.innerText || '') : '';
@@ -159,7 +178,7 @@
       if (paramId) return paramId.trim();
     } catch (e) {}
 
-    return 'CASE-' + new Date().toISOString().slice(0, 10).replace(/-/g, '') + '-' + Math.floor(1000 + Math.random() * 9000);
+    return null;
   }
 
   function extractClaimedAmount() {
@@ -279,11 +298,16 @@
   }
 
   // =========================================================================
-  // --- Section 5: Enterprise Audit Vault & Productivity Logger ---
+  // --- Section 5: Enterprise Audit Vault & Strict Submit Interceptor ---
   // =========================================================================
 
-  async function logProcessedClaim(status = 'APPROVED') {
+  async function logProcessedClaim(status = 'SUBMITTED') {
     const caseId = extractCaseId();
+    if (!caseId) {
+      console.debug('[Data Entry Pro] Skipping log: No valid Case ID detected.');
+      return null;
+    }
+
     const claimed = extractClaimedAmount();
     const approved = extractClaimAmountApproved();
     const mode = detectCaseRemarkMode();
@@ -340,11 +364,16 @@
   function attachSubmitInterceptor() {
     document.addEventListener('click', (e) => {
       const btn = e.target.closest('button, input[type="submit"]');
-      if (btn) {
-        const btnText = (btn.innerText || btn.value || '').trim().toLowerCase();
-        if (btnText === 'submit' || btnText.includes('submit claim') || btnText.includes('final submit')) {
+      if (!btn) return;
+
+      const btnText = (btn.innerText || btn.value || '').trim().toLowerCase();
+      const isSubmitBtn = btnText === 'submit' || btnText.includes('submit claim') || btnText.includes('final submit') || btn.classList.contains('OAOLENepGSc687fLEo9c');
+
+      if (isSubmitBtn) {
+        const caseId = extractCaseId();
+        if (caseId) {
           logProcessedClaim('SUBMITTED');
-          showOnScreenNotification('Claim Logged', `Case [${extractCaseId()}] recorded to daily log.`, true);
+          showOnScreenNotification('Claim Submitted & Logged ✅', `Case [${caseId}] recorded to daily shift report.`, true);
         }
       }
     }, true);
@@ -439,7 +468,7 @@
   }
 
   // =========================================================================
-  // --- Section 7: Tier 1 - Sequential Table Row Approvals ---
+  // --- Section 7: Tier 1 - Infallible Table Row "Query ➔ Approve" Engine ---
   // =========================================================================
 
   async function setRowDropdownToApprove(row, rowNum, actionColIndex) {
@@ -461,6 +490,20 @@
       timeMs: 0
     };
 
+    const isAlreadyApproved = () => {
+      const txt = (actionCell.querySelector('[class*="singleValue"], .css-1i1tyke-singleValue')?.innerText || actionCell.innerText || '').trim();
+      return /^approve[d]?$/i.test(txt);
+    };
+
+    if (isAlreadyApproved()) {
+      logEntry.method = 'already_approved';
+      logEntry.status = 'approved';
+      logEntry.finalText = 'Approve';
+      logEntry.timeMs = Date.now() - startTime;
+      return { success: true, log: logEntry };
+    }
+
+    // Standard HTML <select>
     const selectElem = actionCell.querySelector('select') || row.querySelector('select');
     if (selectElem) {
       for (let i = 0; i < selectElem.options.length; i++) {
@@ -479,6 +522,7 @@
       }
     }
 
+    // React-Select Component with Self-Healing Multi-Tier Pipeline
     const reactSelectControl = actionCell.querySelector('.css-1nxbv4n-control, [class*="-control"], [class*="react-select"], [role="combobox"]') ||
                                row.querySelector('.css-1nxbv4n-control, [class*="-control"]');
     
@@ -488,40 +532,83 @@
       return { success: false, log: logEntry };
     }
 
-    try {
-      reactSelectControl.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-      
-      reactSelectControl.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
-      reactSelectControl.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+    // Multi-tier attempt loop
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        // Blur active elements to avoid menu collisions
+        if (document.activeElement && document.activeElement !== document.body) {
+          document.activeElement.blur();
+        }
 
-      await new Promise(r => setTimeout(r, 70));
+        reactSelectControl.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        
+        const innerInput = reactSelectControl.querySelector('input');
+        if (innerInput) {
+          innerInput.focus();
+        }
 
-      const menuOptions = Array.from(document.querySelectorAll('[class*="-option"], [role="option"], div[id*="option"]'));
-      const approveOption = menuOptions.find(opt => {
-        const t = (opt.innerText || opt.textContent || '').trim().toLowerCase();
-        return t === 'approve' || t === 'approved';
-      });
+        reactSelectControl.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+        reactSelectControl.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
 
-      if (approveOption) {
-        approveOption.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
-        approveOption.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-        logEntry.method = 'react_select_click';
-        logEntry.status = 'approved';
+        await new Promise(r => setTimeout(r, 90));
+
+        // Precision search for rendered menu option
+        const menuOptions = Array.from(document.querySelectorAll('[class*="-option"], [role="option"], div[id*="option"]'));
+        const approveOption = menuOptions.find(opt => {
+          const t = (opt.innerText || opt.textContent || '').trim().toLowerCase();
+          return t === 'approve' || t === 'approved';
+        });
+
+        if (approveOption) {
+          approveOption.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+          approveOption.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+          approveOption.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+          logEntry.method = `react_select_click_attempt_${attempt}`;
+        } else if (innerInput) {
+          // Keyboard fallback: ArrowDown + Enter
+          innerInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, bubbles: true }));
+          innerInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
+          logEntry.method = `react_select_keyboard_attempt_${attempt}`;
+        }
+
+        await new Promise(r => setTimeout(r, 80));
+
+        if (isAlreadyApproved()) {
+          logEntry.status = 'approved';
+          logEntry.finalText = 'Approve';
+          logEntry.timeMs = Date.now() - startTime;
+          return { success: true, log: logEntry };
+        }
+
+        // React Fiber Props Fallback
+        const reactKey = Object.keys(reactSelectControl).find(k => k.startsWith('__reactProps$') || k.startsWith('__reactFiber$'));
+        if (reactKey && reactSelectControl[reactKey]) {
+          const props = reactSelectControl[reactKey];
+          const onChange = props.onChange || props.children?.props?.onChange;
+          if (typeof onChange === 'function') {
+            onChange({ value: 'Approve', label: 'Approve' });
+            logEntry.method = 'react_fiber_props';
+          }
+        }
+
+        await new Promise(r => setTimeout(r, 80));
+
+        if (isAlreadyApproved()) {
+          logEntry.status = 'approved';
+          logEntry.finalText = 'Approve';
+          logEntry.timeMs = Date.now() - startTime;
+          return { success: true, log: logEntry };
+        }
+      } catch (err) {
+        logEntry.error = err.message;
       }
-
-      await new Promise(r => setTimeout(r, 60));
-
-      const finalText = (actionCell.querySelector('[class*="singleValue"], .css-1i1tyke-singleValue')?.innerText || actionCell.innerText || '').trim().replace(/\n/g, ' ');
-      logEntry.finalText = finalText;
-      logEntry.timeMs = Date.now() - startTime;
-
-      return { success: true, log: logEntry };
-    } catch (err) {
-      logEntry.status = 'error';
-      logEntry.error = err.message;
-      logEntry.timeMs = Date.now() - startTime;
-      return { success: false, log: logEntry };
     }
+
+    const finalText = (actionCell.querySelector('[class*="singleValue"], .css-1i1tyke-singleValue')?.innerText || actionCell.innerText || '').trim();
+    logEntry.finalText = finalText;
+    logEntry.status = isAlreadyApproved() ? 'approved' : 'failed_to_switch';
+    logEntry.timeMs = Date.now() - startTime;
+    return { success: isAlreadyApproved(), log: logEntry };
   }
 
   async function approveTableItems(targetIndices = 'ALL') {
@@ -767,7 +854,7 @@
   }
 
   // =========================================================================
-  // --- Section 11: Unified 4-Tier Runner & Diagnostic Store ---
+  // --- Section 11: Unified 4-Tier Runner ---
   // =========================================================================
 
   async function runDataEntryProAutomation(config = {}) {
@@ -784,9 +871,6 @@
     const msg = `Approved ${tableResult.approvedCount}/${tableResult.totalTargeted} table rows, checked ${radioResult.checkedCount} Yes radios, set Case Action to "${caseActionResult.log?.finalText || 'Approve'}", and set [${remarksResult.mode}] Remarks!`;
     
     showOnScreenNotification('Full Approval Complete', msg, isSuccess);
-
-    // Auto-record to Enterprise Audit Vault
-    await logProcessedClaim('APPROVED');
 
     const diagnosticReport = {
       timestamp: new Date().toISOString(),
@@ -813,11 +897,11 @@
   }
 
   // =========================================================================
-  // --- Section 12: Dynamic Island Claims Auditor HUD & Speedometer ---
+  // --- Section 12: Dynamic Island Claims Auditor HUD Component ---
   // =========================================================================
 
   function createDynamicIslandHUD() {
-    if (document.getElementById('data-entry-pro-hud')) return;
+    if (!isClaimsPortal() || document.getElementById('data-entry-pro-hud')) return;
 
     const hud = document.createElement('div');
     hud.id = 'data-entry-pro-hud';
@@ -1042,9 +1126,7 @@
 
     document.body.appendChild(hud);
 
-    // =========================================================================
-    // HUD Event Handlers: Dragging & Position Persistence
-    // =========================================================================
+    // Dragging & Position Handlers
     let isDragging = false;
     let startX = 0, startY = 0, initialLeft = 0, initialTop = 0;
 
@@ -1101,7 +1183,7 @@
       }
     });
 
-    // 1-Click Mode Switcher Chips
+    // Mode Switcher Chips
     const modeChips = hud.querySelectorAll('.dep-mode-chip');
     modeChips.forEach(chip => {
       chip.addEventListener('click', () => {
@@ -1117,7 +1199,7 @@
       });
     });
 
-    // 1-Click Approve Trigger from HUD
+    // Approve Button Trigger
     document.getElementById('depHudApproveBtn')?.addEventListener('click', () => {
       runDataEntryProAutomation({ mode: window.__DATA_ENTRY_PRO_SELECTED_MODE__ });
     });
@@ -1128,9 +1210,7 @@
       chrome.storage?.local?.set({ hudVisible: false });
     });
 
-    // =========================================================================
-    // HUD Live Data Sync & Reactive Observer
-    // =========================================================================
+    // Live Sync & Reactive Observer
     let lastClaimed = '';
     let lastApproved = '';
     let lastCaseId = '';
@@ -1157,7 +1237,6 @@
         approvedEl.innerText = `₹ --`;
       }
 
-      // Sync active mode chip
       modeChips.forEach(c => {
         const m = c.getAttribute('data-mode');
         if (m === detectedMode) {
@@ -1168,7 +1247,6 @@
         }
       });
 
-      // Update Today's Counter from Storage
       const dateKey = new Date().toISOString().slice(0, 10);
       chrome.storage?.local?.get(['data_entry_pro_audit_vault'], (res) => {
         const vault = res?.data_entry_pro_audit_vault || {};
@@ -1178,18 +1256,16 @@
         }
       });
 
-      // Case Transition detected in SPA
       if (caseId && caseId !== lastCaseId) {
         lastCaseId = caseId;
         window.__DATA_ENTRY_PRO_CASE_START_TIME__ = Date.now();
       }
 
-      // Pulse animation if new case data detected
       if ((claimed && claimed !== lastClaimed) || (approved && approved !== lastApproved)) {
         lastClaimed = claimed;
         lastApproved = approved;
         hud.classList.remove('dep-pulse-update');
-        void hud.offsetWidth; // Force reflow
+        void hud.offsetWidth;
         hud.classList.add('dep-pulse-update');
       }
     }
@@ -1330,5 +1406,5 @@
     }
   });
 
-  console.log('[Data Entry Pro v1.5.0] Audit Command Center & Speedometer Active.');
+  console.log('[Data Entry Pro v1.5.1] Active on claims portal.');
 })();

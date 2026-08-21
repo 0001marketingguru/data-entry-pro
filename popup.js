@@ -1,7 +1,7 @@
-// Data Entry Pro v1.5.0 - Popup Controller with Audit Command Center & Multi-Modal Exporter
+// Data Entry Pro v1.5.1 - Popup Controller with Auto-Sanitized Audit Vault & Multi-Modal Exporter
 
 document.addEventListener('DOMContentLoaded', async () => {
-  const CURRENT_VERSION = 'v1.5.0';
+  const CURRENT_VERSION = 'v1.5.1';
   const GITHUB_REPO = '0001marketingguru/data-entry-pro';
 
   // DOM Elements
@@ -66,13 +66,30 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // =========================================================================
-  // 1. Live Audit Vault Loader & KPI Calculator
+  // 1. Live Audit Vault Loader with Auto-Sanitizer (Purges dummy CASE- IDs)
   // =========================================================================
   function loadAuditVaultData() {
     const todayKey = new Date().toISOString().slice(0, 10);
     
     chrome.storage?.local?.get(['data_entry_pro_audit_vault'], (res) => {
       allVaultData = res?.data_entry_pro_audit_vault || {};
+      let needsSave = false;
+
+      // Auto-sanitize legacy dummy CASE- entries
+      Object.keys(allVaultData).forEach(dateKey => {
+        const originalLength = (allVaultData[dateKey] || []).length;
+        allVaultData[dateKey] = (allVaultData[dateKey] || []).filter(r => {
+          return r.caseId && !r.caseId.startsWith('CASE-') && r.caseId !== 'N/A';
+        });
+        if (allVaultData[dateKey].length !== originalLength) {
+          needsSave = true;
+        }
+      });
+
+      if (needsSave) {
+        chrome.storage?.local?.set({ data_entry_pro_audit_vault: allVaultData });
+      }
+
       todayRecords = allVaultData[todayKey] || [];
 
       // Calculate Today's KPIs
@@ -123,12 +140,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     if (filtered.length === 0) {
-      recentClaimsList.innerHTML = `<div class="empty-log-msg">${filterQuery ? 'No matching claims found.' : 'No claims processed today yet.'}</div>`;
+      recentClaimsList.innerHTML = `<div class="empty-log-msg">${filterQuery ? 'No matching claims found.' : 'No claims submitted today yet.'}</div>`;
       return;
     }
 
     recentClaimsList.innerHTML = filtered.map(r => {
-      const statusClass = (r.status || 'approved').toLowerCase();
+      const statusClass = (r.status || 'submitted').toLowerCase();
       return `
         <div class="claim-log-item">
           <div class="claim-log-id" title="${r.caseId}">
@@ -136,7 +153,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           </div>
           <div class="claim-log-details">
             <span class="claim-log-val">₹ ${r.approvedAmount || '0'}</span>
-            <span class="claim-log-status ${statusClass}">${r.decision || r.status || 'DONE'}</span>
+            <span class="claim-log-status ${statusClass}">${r.decision || r.status || 'SUBMITTED'}</span>
           </div>
         </div>
       `;
@@ -152,7 +169,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // =========================================================================
   function exportRecordsToCsv(records, filename = 'Claims_Report.csv') {
     if (!records || records.length === 0) {
-      showStatus('Export Error', 'No claims records found to export.', false);
+      showStatus('Export Error', 'No submitted claims found to export.', false);
       return;
     }
 
@@ -190,7 +207,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       escapeCsv(r.status)
     ].join(','));
 
-    // UTF-8 BOM (\uFEFF) ensures Excel reads Indian Rupee symbols & formatting perfectly
     const csvContent = '\uFEFF' + headers.join(',') + '\n' + rows.join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -206,13 +222,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     showStatus('Export Successful', `Downloaded <strong>${records.length} claim records</strong> as ${filename}!`, true);
   }
 
-  // 1-Click Download Today's CSV
   downloadTodayCsvBtn?.addEventListener('click', () => {
     const todayKey = new Date().toISOString().slice(0, 10);
     exportRecordsToCsv(todayRecords, `Claims_Audit_Report_${todayKey}.csv`);
   });
 
-  // Export Full History (All Days)
   downloadAllHistoryCsvBtn?.addEventListener('click', () => {
     let allRecords = [];
     Object.keys(allVaultData).sort().reverse().forEach(k => {
@@ -229,7 +243,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const count = todayRecords.length;
 
     if (count === 0) {
-      showStatus('Note', 'No claims logged today yet. Process a claim to generate report.', false);
+      showStatus('Note', 'No claims submitted today yet.', false);
       return;
     }
 
@@ -257,7 +271,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const summaryText = `📊 *CLAIMS AUDIT DAILY PERFORMANCE — ${todayKey}*
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✅ *Total Claims Processed:*  ${count} Claims
+✅ *Total Claims Submitted:*  ${count} Claims
 💰 *Total Claimed Value:*     ₹ ${totalClaimed.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
 💎 *Total Evaluated Value:*   ₹ ${totalApproved.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
 ⚖️ *Total Deductions:*        ₹ ${totalDeductions.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
@@ -272,9 +286,8 @@ _Generated via Data Entry Pro Enterprise_`;
     });
   });
 
-  // Reset Today's Log
   clearTodayLogBtn?.addEventListener('click', () => {
-    if (confirm("Are you sure you want to reset today's log? (Export your CSV first!)")) {
+    if (confirm("Are you sure you want to reset today's log?")) {
       const todayKey = new Date().toISOString().slice(0, 10);
       delete allVaultData[todayKey];
       chrome.storage?.local?.set({ data_entry_pro_audit_vault: allVaultData }, () => {
