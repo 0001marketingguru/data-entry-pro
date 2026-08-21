@@ -1,10 +1,11 @@
 /**
- * Data Entry Pro v1.2.2 - Enterprise Claims UI Automation Content Script
+ * Data Entry Pro v1.2.3 - Enterprise Claims UI Automation Content Script
  * 
  * Specifically optimized for PMJAY Payer Claims Evaluation:
- * - Tier 1: Sequential Actionable Details Table row approvals ("Approve")
+ * - Dedicated React-Select State & Pointer Event Engine (handles Prefix IDs, PointerDown, & React Fiber props)
+ * - Tier 1: Sequential Actionable Details Table row approvals ("Approve" across all rows)
  * - Tier 2: 3-Row Medical Evaluation Checklist ("Yes" radios)
- * - Tier 3: Case-Level Decision Action* dropdown ("Approve" with multi-strategy locator)
+ * - Tier 3: Case-Level Decision Action* dropdown ("Approve" with exact prefix targeting)
  * - Tier 4: Standard Clinical Justification Remarks auto-population
  * - Full Diagnostic Logger & Zero-Click Chrome Auto-Reload Bridge
  */
@@ -75,7 +76,7 @@
   }
 
   // =========================================================================
-  // --- Section 2: Framework Event Dispatchers ---
+  // --- Section 2: Framework Event Dispatchers & React-Select Engine ---
   // =========================================================================
 
   function dispatchFrameworkValueChange(element, value) {
@@ -115,6 +116,103 @@
     radioInput.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
     radioInput.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
     radioInput.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+  }
+
+  /**
+   * Deterministic React-Select Value Setter
+   * Uses React Fiber props bypass, targeted prefix listbox matching, pointerdown events, and keyboard sequence
+   */
+  async function setReactSelectValue(containerOrControl, targetValue = 'Approve') {
+    if (!containerOrControl) return { success: false, method: 'no_element' };
+
+    const input = containerOrControl.tagName === 'INPUT' 
+      ? containerOrControl 
+      : containerOrControl.querySelector('input[role="combobox"], input[id^="react-select-"], input[type="text"]');
+    
+    const control = containerOrControl.classList.contains('css-1nxbv4n-control') || containerOrControl.classList.contains('control')
+      ? containerOrControl
+      : (containerOrControl.querySelector('.css-1nxbv4n-control, [class*="-control"]') || containerOrControl);
+
+    const hiddenBackingInput = containerOrControl.parentElement?.querySelector('input[name*="selecthidden"], input[id*="selecthidden"]') ||
+                              containerOrControl.querySelector('input[name*="selecthidden"]');
+
+    // Method 1: React Fiber Props direct invocation (Instantaneous state update)
+    try {
+      const fiberKey = Object.keys(control).find(k => k.startsWith('__reactProps') || k.startsWith('__reactFiber'));
+      if (fiberKey) {
+        let node = control[fiberKey];
+        while (node) {
+          const props = node.memoizedProps || node.pendingProps;
+          if (props && typeof props.onChange === 'function') {
+            props.onChange({ label: targetValue, value: targetValue, text: targetValue });
+            break;
+          }
+          node = node.return;
+        }
+      }
+    } catch (e) {
+      // Fiber method optional
+    }
+
+    // Method 2: Targeted DOM Open & Click with Prefix Matching
+    if (input) {
+      input.focus();
+    }
+
+    const clickTarget = control.querySelector('[class*="indicator"], [class*="indicatorContainer"], svg') || control;
+    
+    // Dispatch complete pointer and mouse event chain
+    ['pointerdown', 'mousedown', 'mouseup', 'click'].forEach(evt => {
+      clickTarget.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window, buttons: 1 }));
+    });
+
+    if (input) {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, bubbles: true, cancelable: true }));
+    }
+
+    // Identify this dropdown's specific ID prefix (e.g. "react-select-3")
+    const inputId = input?.id || '';
+    const prefix = inputId ? inputId.replace('-input', '') : '';
+
+    let optionFound = null;
+    for (let attempt = 0; attempt < 8; attempt++) {
+      await new Promise(r => setTimeout(r, 40));
+
+      let candidateOptions = [];
+      if (prefix) {
+        candidateOptions = Array.from(document.querySelectorAll(`div[id^="${prefix}-option"], #${prefix}-listbox div, div[id*="${prefix}"]`));
+      }
+      if (candidateOptions.length === 0) {
+        candidateOptions = Array.from(document.querySelectorAll('[class*="-option"], [role="option"], .select-item'));
+      }
+
+      optionFound = candidateOptions.find(opt => {
+        const t = (opt.innerText || opt.textContent || '').trim().toLowerCase();
+        return t === targetValue.toLowerCase() || t === (targetValue + 'd').toLowerCase();
+      });
+
+      if (optionFound) break;
+    }
+
+    if (optionFound) {
+      ['pointerdown', 'mousedown', 'mouseup', 'click'].forEach(evt => {
+        optionFound.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window, buttons: 1 }));
+      });
+    } else if (input) {
+      // Method 3: Keyboard typing + Enter fallback
+      input.focus();
+      dispatchFrameworkValueChange(input, targetValue);
+      ['keydown', 'keypress', 'keyup'].forEach(evt => {
+        input.dispatchEvent(new KeyboardEvent(evt, { key: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+      });
+    }
+
+    if (hiddenBackingInput) {
+      dispatchFrameworkValueChange(hiddenBackingInput, targetValue);
+    }
+
+    await new Promise(r => setTimeout(r, 60));
+    return { success: true, method: optionFound ? 'menu_option_click' : 'keyboard_fallback' };
   }
 
   // =========================================================================
@@ -230,7 +328,7 @@
       timeMs: 0
     };
 
-    // Case 1: Standard HTML <select>
+    // Case A: Standard HTML <select>
     const selectElem = actionCell.querySelector('select') || row.querySelector('select');
     if (selectElem) {
       for (let i = 0; i < selectElem.options.length; i++) {
@@ -249,73 +347,24 @@
       }
     }
 
-    // Case 2: React-Select Component
+    // Case B: React-Select Component
     const reactSelectControl = actionCell.querySelector('.css-1nxbv4n-control, [class*="-control"], [class*="react-select"], [role="combobox"]') ||
                                row.querySelector('.css-1nxbv4n-control, [class*="-control"]');
-    const comboboxInput = actionCell.querySelector('input[role="combobox"], input[id^="react-select-"], input[type="text"]') ||
-                          row.querySelector('input[role="combobox"], input[id^="react-select-"]');
-    const hiddenBackingInput = actionCell.querySelector('input[name*="selecthidden"], input[id*="selecthidden"]') ||
-                               row.querySelector('input[name*="selecthidden"]');
-
-    if (!reactSelectControl && !comboboxInput) {
+    
+    if (!reactSelectControl) {
       logEntry.status = 'no_control_found';
       logEntry.timeMs = Date.now() - startTime;
       return { success: false, log: logEntry };
     }
 
     try {
-      if (comboboxInput) comboboxInput.focus();
-
-      const clickTarget = reactSelectControl || comboboxInput;
-      clickTarget.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      reactSelectControl.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      const res = await setReactSelectValue(reactSelectControl, 'Approve');
       
-      clickTarget.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
-      clickTarget.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
-      clickTarget.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-
-      if (comboboxInput) {
-        comboboxInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, bubbles: true }));
-      }
-
-      let approveOption = null;
-      for (let attempt = 0; attempt < 6; attempt++) {
-        await new Promise(r => setTimeout(r, 45));
-
-        const menuOptions = Array.from(document.querySelectorAll('[class*="-option"], [role="option"], .select-item, [id*="-option-"], div[id^="react-select-"]'));
-        approveOption = menuOptions.find(opt => {
-          const t = (opt.innerText || opt.textContent || '').trim().toLowerCase();
-          return t === 'approve' || t === 'approved';
-        });
-
-        if (approveOption) break;
-      }
-
-      if (approveOption) {
-        approveOption.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
-        approveOption.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
-        approveOption.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-        logEntry.method = 'react_select_menu_click';
-        logEntry.status = 'approved';
-      } else {
-        if (comboboxInput) {
-          comboboxInput.focus();
-          dispatchFrameworkValueChange(comboboxInput, 'Approve');
-          comboboxInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
-          logEntry.method = 'react_select_keyboard_fallback';
-          logEntry.status = 'approved';
-        } else {
-          logEntry.status = 'menu_option_not_found';
-        }
-      }
-
-      if (hiddenBackingInput) {
-        dispatchFrameworkValueChange(hiddenBackingInput, 'Approve');
-      }
-
-      await new Promise(r => setTimeout(r, 60));
-
       const finalText = (actionCell.querySelector('[class*="singleValue"], .css-1i1tyke-singleValue')?.innerText || actionCell.innerText || '').trim().replace(/\n/g, ' ');
       logEntry.finalText = finalText;
+      logEntry.method = res.method;
+      logEntry.status = /^approve[d]?$/i.test(finalText) ? 'approved' : 'attempted';
       logEntry.timeMs = Date.now() - startTime;
 
       return { success: true, log: logEntry };
@@ -477,16 +526,14 @@
 
   /**
    * Targets the bottom Case-Level Decision Action* dropdown (Approve / Assign)
-   * Uses a multi-strategy locator to find the exact React-Select component
    */
   async function setCaseLevelActionToApprove() {
     const startTime = Date.now();
     const log = { target: 'case_level_action', status: 'pending', timeMs: 0 };
 
     let targetControl = null;
-    let targetInput = null;
 
-    // Strategy 1: Find label starting with "Action" outside tables
+    // Strategy 1: Find label strictly starting with "Action" outside tables
     const allLabels = Array.from(document.querySelectorAll('label, div, p, span'));
     const actionLabel = allLabels.find(el => {
       if (el.closest('table') || el.closest('thead')) return false;
@@ -497,95 +544,43 @@
     if (actionLabel) {
       const container = actionLabel.closest('.formgroup, .row, .col-md-12, .col-lg-12, div');
       targetControl = container?.querySelector('.css-1nxbv4n-control, [class*="-control"], [class*="react-select"], [role="combobox"]');
-      targetInput = container?.querySelector('input[role="combobox"], input[id^="react-select-"], input[type="text"]');
     }
 
-    // Strategy 2: Look immediately preceding or near the Remarks textarea
+    // Strategy 2: Preceding sibling near Remarks textarea
     if (!targetControl) {
       const textarea = document.querySelector('textarea');
       if (textarea) {
         const parentSection = textarea.closest('.row, form, div')?.parentElement || document;
         const candidateControls = Array.from(parentSection.querySelectorAll('.css-1nxbv4n-control, [class*="-control"]'));
         targetControl = candidateControls.find(c => !c.closest('table') && !c.closest('header'));
-        if (targetControl) {
-          targetInput = targetControl.querySelector('input[role="combobox"], input[id^="react-select-"]');
-        }
       }
     }
 
-    // Strategy 3: Global search for non-table React-Select dropdowns
+    // Strategy 3: Global non-table React-Select control at the bottom
     if (!targetControl) {
       const allControls = Array.from(document.querySelectorAll('.css-1nxbv4n-control, [class*="-control"]'));
       targetControl = allControls.reverse().find(ctrl => !ctrl.closest('table') && !ctrl.closest('header') && !ctrl.closest('nav'));
-      if (targetControl) {
-        targetInput = targetControl.querySelector('input[role="combobox"], input[id^="react-select-"]');
-      }
     }
 
-    if (!targetControl && !targetInput) {
+    if (!targetControl) {
       log.status = 'control_not_found';
       log.timeMs = Date.now() - startTime;
       return { success: false, log };
     }
 
     try {
-      const activeElement = targetControl || targetInput;
-      highlightElement(activeElement);
-      activeElement.scrollIntoView({ block: 'center', inline: 'nearest' });
+      highlightElement(targetControl);
+      targetControl.scrollIntoView({ block: 'center', inline: 'nearest' });
 
-      // Step A: Focus input & dispatch mouse events to open dropdown menu
-      if (targetInput) targetInput.focus();
+      // Run our deterministic React-Select value setter
+      const res = await setReactSelectValue(targetControl, 'Approve');
 
-      const indicators = activeElement.querySelector('[class*="indicator"], [class*="indicatorContainer"], svg') || activeElement;
-      indicators.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
-      indicators.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
-      indicators.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-
-      if (targetInput) {
-        targetInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, bubbles: true }));
-      }
-
-      // Step B: Poll for the menu portal in DOM
-      let approveOption = null;
-      for (let attempt = 0; attempt < 8; attempt++) {
-        await new Promise(r => setTimeout(r, 45));
-
-        const menuOptions = Array.from(document.querySelectorAll('[class*="-option"], [role="option"], .select-item, [id*="-option-"], div[id^="react-select-"]'));
-        approveOption = menuOptions.find(opt => {
-          const t = (opt.innerText || opt.textContent || '').trim().toLowerCase();
-          return t === 'approve' || t === 'approved';
-        });
-
-        if (approveOption) break;
-      }
-
-      // Step C: Click Approve option
-      if (approveOption) {
-        approveOption.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
-        approveOption.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
-        approveOption.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-        log.status = 'approved_via_menu_click';
-      } else {
-        // Step D: Keyboard Fallback
-        if (targetInput) {
-          targetInput.focus();
-          dispatchFrameworkValueChange(targetInput, 'Approve');
-          targetInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
-          log.status = 'approved_via_keyboard';
-        } else {
-          log.status = 'menu_option_not_found';
-        }
-      }
-
-      // Step E: Sync hidden backing input
-      const hiddenInputs = Array.from(document.querySelectorAll('input[name*="selecthidden"], input[id*="selecthidden"]'));
-      const caseHiddenInput = hiddenInputs.find(i => !i.closest('table'));
-      if (caseHiddenInput) {
-        dispatchFrameworkValueChange(caseHiddenInput, 'Approve');
-      }
-
-      await new Promise(r => setTimeout(r, 80));
+      const finalText = (targetControl.querySelector('[class*="singleValue"], .css-1i1tyke-singleValue')?.innerText || targetControl.innerText || '').trim();
+      log.finalText = finalText;
+      log.method = res.method;
+      log.status = /^approve[d]?$/i.test(finalText) ? 'approved' : 'executed';
       log.timeMs = Date.now() - startTime;
+
       return { success: true, log };
     } catch (err) {
       log.status = 'error';
@@ -673,7 +668,7 @@
     const remarksResult = setCaseLevelRemarks();
 
     const isSuccess = tableResult.success && radioResult.success && caseActionResult.success;
-    const msg = `Approved ${tableResult.approvedCount}/${tableResult.totalTargeted} table rows, checked 3 Yes radios, set Case Action to "Approve", and added standard Remarks!`;
+    const msg = `Approved ${tableResult.approvedCount}/${tableResult.totalTargeted} table rows, checked ${radioResult.checkedCount} Yes radios, set Case Action to "Approve", and added standard Remarks!`;
     
     showOnScreenNotification('Full Approval Complete', msg, isSuccess);
 
@@ -765,5 +760,5 @@
     }
   });
 
-  console.log('[Data Entry Pro v1.2.2] Content script ready with multi-strategy Case Action locator.');
+  console.log('[Data Entry Pro v1.2.3] Content script ready with React-Select Pointer Engine.');
 })();

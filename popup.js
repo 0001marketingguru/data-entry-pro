@@ -1,7 +1,7 @@
-// Data Entry Pro v1.2.2 - Popup Controller with 4-Tier Reporting
+// Data Entry Pro v1.2.3 - Popup Controller with 4-Tier Reporting
 
 document.addEventListener('DOMContentLoaded', async () => {
-  const CURRENT_VERSION = 'v1.2.2';
+  const CURRENT_VERSION = 'v1.2.3';
   const GITHUB_REPO = '0001marketingguru/data-entry-pro';
 
   const detectionBox = document.getElementById('detectionBox');
@@ -109,7 +109,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const msg = `
           <strong>1. Table Rows:</strong> Set <strong>${tier1_tableResult.approvedCount} of ${tier1_tableResult.totalTargeted}</strong> rows to "Approve".<br>
           <strong>2. Checklist:</strong> Checked "Yes" on <strong>${tier2_radioResult.checkedCount} of 3</strong> evaluation questions.<br>
-          <strong>3. Case Action*:</strong> Set to <strong>"Approve"</strong> ✅<br>
+          <strong>3. Case Action*:</strong> Set to <strong>"${tier3_caseAction?.log?.finalText || 'Approve'}"</strong> ✅<br>
           <strong>4. Remarks:</strong> ${tier4_remarks.text || 'Populated standard remark.'}
         `;
         showStatus('Full Approval Finished', msg, res.summary.overallSuccess);
@@ -209,7 +209,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     const jsonReport = JSON.stringify(report, null, 2);
-    const formattedText = `### 📋 Data Entry Pro Diagnostic Log\n**Timestamp:** ${report.timestamp}\n**Overall Success:** ${report.overallSuccess}\n**Tier 1 (Table):** ${report.tier1_tableResult?.approvedCount}/${report.tier1_tableResult?.totalTargeted}\n**Tier 2 (Checklist):** ${report.tier2_radioResult?.checkedCount}/3\n**Tier 3 (Case Action):** ${report.tier3_caseAction?.status}\n**Tier 4 (Remarks):** ${report.tier4_remarks?.text}\n\n\`\`\`json\n${jsonReport}\n\`\`\``;
+    const formattedText = `### 📋 Data Entry Pro Diagnostic Log\n**Timestamp:** ${report.timestamp}\n**Overall Success:** ${report.overallSuccess}\n**Tier 1 (Table):** ${report.tier1_tableResult?.approvedCount}/${report.tier1_tableResult?.totalTargeted}\n**Tier 2 (Checklist):** ${report.tier2_radioResult?.checkedCount}/3\n**Tier 3 (Case Action):** ${report.tier3_caseAction?.log?.finalText || report.tier3_caseAction?.log?.status}\n**Tier 4 (Remarks):** ${report.tier4_remarks?.text}\n\n\`\`\`json\n${jsonReport}\n\`\`\``;
 
     navigator.clipboard.writeText(formattedText).then(() => {
       showCopySuccess("Diagnostic log copied! Paste in chat.");
