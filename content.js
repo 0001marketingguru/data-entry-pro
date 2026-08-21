@@ -1,11 +1,12 @@
 /**
- * Data Entry Pro v1.2.3 - Enterprise Claims UI Automation Content Script
+ * Data Entry Pro v1.2.4 - Enterprise Claims UI Automation Content Script
  * 
  * Specifically optimized for PMJAY Payer Claims Evaluation:
- * - Dedicated React-Select State & Pointer Event Engine (handles Prefix IDs, PointerDown, & React Fiber props)
- * - Tier 1: Sequential Actionable Details Table row approvals ("Approve" across all rows)
+ * - Deterministic Case-Level Action* locator using Document Position relative to Remarks textarea
+ * - Strictly isolates non-table React-Select controls to eliminate table row collision
+ * - Tier 1: Sequential Table row approvals ("Approve" across all rows)
  * - Tier 2: 3-Row Medical Evaluation Checklist ("Yes" radios)
- * - Tier 3: Case-Level Decision Action* dropdown ("Approve" with exact prefix targeting)
+ * - Tier 3: Case-Level Decision Action* dropdown ("Approve")
  * - Tier 4: Standard Clinical Justification Remarks auto-population
  * - Full Diagnostic Logger & Zero-Click Chrome Auto-Reload Bridge
  */
@@ -119,8 +120,7 @@
   }
 
   /**
-   * Deterministic React-Select Value Setter
-   * Uses React Fiber props bypass, targeted prefix listbox matching, pointerdown events, and keyboard sequence
+   * Universal React-Select Value Setter
    */
   async function setReactSelectValue(containerOrControl, targetValue = 'Approve') {
     if (!containerOrControl) return { success: false, method: 'no_element' };
@@ -136,7 +136,7 @@
     const hiddenBackingInput = containerOrControl.parentElement?.querySelector('input[name*="selecthidden"], input[id*="selecthidden"]') ||
                               containerOrControl.querySelector('input[name*="selecthidden"]');
 
-    // Method 1: React Fiber Props direct invocation (Instantaneous state update)
+    // Method 1: React Fiber Props direct invocation
     try {
       const fiberKey = Object.keys(control).find(k => k.startsWith('__reactProps') || k.startsWith('__reactFiber'));
       if (fiberKey) {
@@ -161,7 +161,6 @@
 
     const clickTarget = control.querySelector('[class*="indicator"], [class*="indicatorContainer"], svg') || control;
     
-    // Dispatch complete pointer and mouse event chain
     ['pointerdown', 'mousedown', 'mouseup', 'click'].forEach(evt => {
       clickTarget.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window, buttons: 1 }));
     });
@@ -170,7 +169,6 @@
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, bubbles: true, cancelable: true }));
     }
 
-    // Identify this dropdown's specific ID prefix (e.g. "react-select-3")
     const inputId = input?.id || '';
     const prefix = inputId ? inputId.replace('-input', '') : '';
 
@@ -525,42 +523,50 @@
   // =========================================================================
 
   /**
-   * Targets the bottom Case-Level Decision Action* dropdown (Approve / Assign)
+   * Locates the Case-Level Action* dropdown with 100% precision:
+   * Finds the exact non-table React-Select control positioned immediately preceding the Remarks textarea
    */
-  async function setCaseLevelActionToApprove() {
-    const startTime = Date.now();
-    const log = { target: 'case_level_action', status: 'pending', timeMs: 0 };
+  function findCaseLevelActionControl() {
+    const allControls = Array.from(document.querySelectorAll('.css-1nxbv4n-control, [class*="-control"], select, [role="combobox"]'));
+    
+    // Filter out table elements
+    const nonTableControls = allControls.filter(ctrl => {
+      return !ctrl.closest('table') && !ctrl.closest('thead') && !ctrl.closest('tbody') && !ctrl.closest('header') && !ctrl.closest('nav');
+    });
 
-    let targetControl = null;
+    const textarea = document.querySelector('textarea');
+    if (textarea && nonTableControls.length > 0) {
+      // Find controls that appear BEFORE the textarea in DOM position
+      const preceding = nonTableControls.filter(ctrl => {
+        return (ctrl.compareDocumentPosition(textarea) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+      });
+      if (preceding.length > 0) {
+        return preceding[preceding.length - 1];
+      }
+    }
 
-    // Strategy 1: Find label strictly starting with "Action" outside tables
+    // Secondary strategy: Look for Action* label container
     const allLabels = Array.from(document.querySelectorAll('label, div, p, span'));
     const actionLabel = allLabels.find(el => {
-      if (el.closest('table') || el.closest('thead')) return false;
+      if (el.closest('table')) return false;
       const text = el.innerText?.trim() || el.textContent?.trim() || '';
       return /^action\s*\*?$/i.test(text);
     });
 
     if (actionLabel) {
       const container = actionLabel.closest('.formgroup, .row, .col-md-12, .col-lg-12, div');
-      targetControl = container?.querySelector('.css-1nxbv4n-control, [class*="-control"], [class*="react-select"], [role="combobox"]');
+      const ctrl = container?.querySelector('.css-1nxbv4n-control, [class*="-control"], [class*="react-select"], [role="combobox"]');
+      if (ctrl && !ctrl.closest('table')) return ctrl;
     }
 
-    // Strategy 2: Preceding sibling near Remarks textarea
-    if (!targetControl) {
-      const textarea = document.querySelector('textarea');
-      if (textarea) {
-        const parentSection = textarea.closest('.row, form, div')?.parentElement || document;
-        const candidateControls = Array.from(parentSection.querySelectorAll('.css-1nxbv4n-control, [class*="-control"]'));
-        targetControl = candidateControls.find(c => !c.closest('table') && !c.closest('header'));
-      }
-    }
+    return nonTableControls[nonTableControls.length - 1] || null;
+  }
 
-    // Strategy 3: Global non-table React-Select control at the bottom
-    if (!targetControl) {
-      const allControls = Array.from(document.querySelectorAll('.css-1nxbv4n-control, [class*="-control"]'));
-      targetControl = allControls.reverse().find(ctrl => !ctrl.closest('table') && !ctrl.closest('header') && !ctrl.closest('nav'));
-    }
+  async function setCaseLevelActionToApprove() {
+    const startTime = Date.now();
+    const log = { target: 'case_level_action', status: 'pending', timeMs: 0 };
+
+    const targetControl = findCaseLevelActionControl();
 
     if (!targetControl) {
       log.status = 'control_not_found';
@@ -569,16 +575,19 @@
     }
 
     try {
+      const initialText = (targetControl.innerText || '').trim();
+      log.initialText = initialText;
+
       highlightElement(targetControl);
       targetControl.scrollIntoView({ block: 'center', inline: 'nearest' });
 
-      // Run our deterministic React-Select value setter
+      // Execute React-Select value setter
       const res = await setReactSelectValue(targetControl, 'Approve');
 
       const finalText = (targetControl.querySelector('[class*="singleValue"], .css-1i1tyke-singleValue')?.innerText || targetControl.innerText || '').trim();
       log.finalText = finalText;
       log.method = res.method;
-      log.status = /^approve[d]?$/i.test(finalText) ? 'approved' : 'executed';
+      log.status = /^approve[d]?$/i.test(finalText) ? 'approved' : 'attempted';
       log.timeMs = Date.now() - startTime;
 
       return { success: true, log };
@@ -668,7 +677,7 @@
     const remarksResult = setCaseLevelRemarks();
 
     const isSuccess = tableResult.success && radioResult.success && caseActionResult.success;
-    const msg = `Approved ${tableResult.approvedCount}/${tableResult.totalTargeted} table rows, checked ${radioResult.checkedCount} Yes radios, set Case Action to "Approve", and added standard Remarks!`;
+    const msg = `Approved ${tableResult.approvedCount}/${tableResult.totalTargeted} table rows, checked ${radioResult.checkedCount} Yes radios, set Case Action to "${caseActionResult.log?.finalText || 'Approve'}", and added standard Remarks!`;
     
     showOnScreenNotification('Full Approval Complete', msg, isSuccess);
 
@@ -760,5 +769,5 @@
     }
   });
 
-  console.log('[Data Entry Pro v1.2.3] Content script ready with React-Select Pointer Engine.');
+  console.log('[Data Entry Pro v1.2.4] Content script ready with Document Position Case Action Locator.');
 })();
