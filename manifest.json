@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Data Entry Pro - Claims Automation",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Enterprise-grade UI automation for medical review and claims evaluation portals with zero-click auto-reload and 4-tier approval engine.",
   "icons": {
     "16": "icons/icon16.png",
@@ -20,7 +20,7 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Data Entry Pro v1.2.1",
+    "default_title": "Data Entry Pro v1.2.2",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",

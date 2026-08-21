@@ -1,10 +1,10 @@
 /**
- * Data Entry Pro v1.2.1 - Enterprise Claims UI Automation Content Script
+ * Data Entry Pro v1.2.2 - Enterprise Claims UI Automation Content Script
  * 
  * Specifically optimized for PMJAY Payer Claims Evaluation:
  * - Tier 1: Sequential Actionable Details Table row approvals ("Approve")
  * - Tier 2: 3-Row Medical Evaluation Checklist ("Yes" radios)
- * - Tier 3: Case-Level Decision Action* dropdown ("Approve")
+ * - Tier 3: Case-Level Decision Action* dropdown ("Approve" with multi-strategy locator)
  * - Tier 4: Standard Clinical Justification Remarks auto-population
  * - Full Diagnostic Logger & Zero-Click Chrome Auto-Reload Bridge
  */
@@ -264,9 +264,7 @@
     }
 
     try {
-      if (comboboxInput) {
-        comboboxInput.focus();
-      }
+      if (comboboxInput) comboboxInput.focus();
 
       const clickTarget = reactSelectControl || comboboxInput;
       clickTarget.scrollIntoView({ block: 'nearest', inline: 'nearest' });
@@ -280,7 +278,7 @@
       }
 
       let approveOption = null;
-      for (let attempt = 0; attempt < 5; attempt++) {
+      for (let attempt = 0; attempt < 6; attempt++) {
         await new Promise(r => setTimeout(r, 45));
 
         const menuOptions = Array.from(document.querySelectorAll('[class*="-option"], [role="option"], .select-item, [id*="-option-"], div[id^="react-select-"]'));
@@ -479,77 +477,114 @@
 
   /**
    * Targets the bottom Case-Level Decision Action* dropdown (Approve / Assign)
+   * Uses a multi-strategy locator to find the exact React-Select component
    */
   async function setCaseLevelActionToApprove() {
     const startTime = Date.now();
     const log = { target: 'case_level_action', status: 'pending', timeMs: 0 };
 
-    // Locate the case-level Action dropdown container (below checklist questions)
-    const allLabels = Array.from(document.querySelectorAll('label, span, div, p'));
+    let targetControl = null;
+    let targetInput = null;
+
+    // Strategy 1: Find label starting with "Action" outside tables
+    const allLabels = Array.from(document.querySelectorAll('label, div, p, span'));
     const actionLabel = allLabels.find(el => {
-      const t = el.textContent.trim();
-      return (t === 'Action*' || t === 'Action *' || t === 'Action') && !el.closest('table') && !el.closest('thead');
+      if (el.closest('table') || el.closest('thead')) return false;
+      const text = el.innerText?.trim() || el.textContent?.trim() || '';
+      return /^action\s*\*?$/i.test(text);
     });
 
-    let actionContainer = actionLabel?.closest('.formgroup, .row, .col-md-12, div') || null;
-    let reactControl = actionContainer?.querySelector('.css-1nxbv4n-control, [class*="-control"], [class*="react-select"], [role="combobox"]');
-    
-    if (!reactControl) {
-      // Fallback: search all react-select controls outside tables
-      const allControls = Array.from(document.querySelectorAll('.css-1nxbv4n-control, [class*="-control"]'));
-      reactControl = allControls.find(ctrl => !ctrl.closest('table') && !ctrl.closest('header') && !ctrl.closest('nav'));
+    if (actionLabel) {
+      const container = actionLabel.closest('.formgroup, .row, .col-md-12, .col-lg-12, div');
+      targetControl = container?.querySelector('.css-1nxbv4n-control, [class*="-control"], [class*="react-select"], [role="combobox"]');
+      targetInput = container?.querySelector('input[role="combobox"], input[id^="react-select-"], input[type="text"]');
     }
 
-    if (!reactControl) {
+    // Strategy 2: Look immediately preceding or near the Remarks textarea
+    if (!targetControl) {
+      const textarea = document.querySelector('textarea');
+      if (textarea) {
+        const parentSection = textarea.closest('.row, form, div')?.parentElement || document;
+        const candidateControls = Array.from(parentSection.querySelectorAll('.css-1nxbv4n-control, [class*="-control"]'));
+        targetControl = candidateControls.find(c => !c.closest('table') && !c.closest('header'));
+        if (targetControl) {
+          targetInput = targetControl.querySelector('input[role="combobox"], input[id^="react-select-"]');
+        }
+      }
+    }
+
+    // Strategy 3: Global search for non-table React-Select dropdowns
+    if (!targetControl) {
+      const allControls = Array.from(document.querySelectorAll('.css-1nxbv4n-control, [class*="-control"]'));
+      targetControl = allControls.reverse().find(ctrl => !ctrl.closest('table') && !ctrl.closest('header') && !ctrl.closest('nav'));
+      if (targetControl) {
+        targetInput = targetControl.querySelector('input[role="combobox"], input[id^="react-select-"]');
+      }
+    }
+
+    if (!targetControl && !targetInput) {
       log.status = 'control_not_found';
       log.timeMs = Date.now() - startTime;
       return { success: false, log };
     }
 
     try {
-      highlightElement(reactControl);
-      reactControl.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      const activeElement = targetControl || targetInput;
+      highlightElement(activeElement);
+      activeElement.scrollIntoView({ block: 'center', inline: 'nearest' });
 
-      const comboboxInput = reactControl.querySelector('input[role="combobox"], input[id^="react-select-"], input[type="text"]');
-      if (comboboxInput) comboboxInput.focus();
+      // Step A: Focus input & dispatch mouse events to open dropdown menu
+      if (targetInput) targetInput.focus();
 
-      reactControl.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
-      reactControl.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
-      reactControl.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+      const indicators = activeElement.querySelector('[class*="indicator"], [class*="indicatorContainer"], svg') || activeElement;
+      indicators.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+      indicators.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+      indicators.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
 
-      if (comboboxInput) {
-        comboboxInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, bubbles: true }));
+      if (targetInput) {
+        targetInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, bubbles: true }));
       }
 
+      // Step B: Poll for the menu portal in DOM
       let approveOption = null;
-      for (let attempt = 0; attempt < 5; attempt++) {
+      for (let attempt = 0; attempt < 8; attempt++) {
         await new Promise(r => setTimeout(r, 45));
+
         const menuOptions = Array.from(document.querySelectorAll('[class*="-option"], [role="option"], .select-item, [id*="-option-"], div[id^="react-select-"]'));
         approveOption = menuOptions.find(opt => {
           const t = (opt.innerText || opt.textContent || '').trim().toLowerCase();
           return t === 'approve' || t === 'approved';
         });
+
         if (approveOption) break;
       }
 
+      // Step C: Click Approve option
       if (approveOption) {
         approveOption.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
         approveOption.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
         approveOption.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
         log.status = 'approved_via_menu_click';
-      } else if (comboboxInput) {
-        comboboxInput.focus();
-        dispatchFrameworkValueChange(comboboxInput, 'Approve');
-        comboboxInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
-        log.status = 'approved_via_keyboard';
+      } else {
+        // Step D: Keyboard Fallback
+        if (targetInput) {
+          targetInput.focus();
+          dispatchFrameworkValueChange(targetInput, 'Approve');
+          targetInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
+          log.status = 'approved_via_keyboard';
+        } else {
+          log.status = 'menu_option_not_found';
+        }
       }
 
-      const hiddenInput = actionContainer?.querySelector('input[name*="selecthidden"], input[id*="selecthidden"]') || document.querySelector('input[name*="selecthidden"]:not(table input)');
-      if (hiddenInput) {
-        dispatchFrameworkValueChange(hiddenInput, 'Approve');
+      // Step E: Sync hidden backing input
+      const hiddenInputs = Array.from(document.querySelectorAll('input[name*="selecthidden"], input[id*="selecthidden"]'));
+      const caseHiddenInput = hiddenInputs.find(i => !i.closest('table'));
+      if (caseHiddenInput) {
+        dispatchFrameworkValueChange(caseHiddenInput, 'Approve');
       }
 
-      await new Promise(r => setTimeout(r, 60));
+      await new Promise(r => setTimeout(r, 80));
       log.timeMs = Date.now() - startTime;
       return { success: true, log };
     } catch (err) {
@@ -564,14 +599,10 @@
   // --- Section 7: Tier 4 - Standard Clinical Remarks Auto-Population ---
   // =========================================================================
 
-  /**
-   * Dynamically formats and sets standard remarks text based on approved amount
-   */
   function setCaseLevelRemarks() {
     const startTime = Date.now();
     const log = { target: 'case_level_remarks', status: 'pending', text: '', timeMs: 0 };
 
-    // Locate the Remarks textarea (maxlength 500)
     const textarea = document.querySelector('textarea.form-control, textarea[placeholder*="Type here"], textarea[maxlength="500"], textarea');
     if (!textarea) {
       log.status = 'textarea_not_found';
@@ -583,7 +614,6 @@
     let approvedAmount = '';
     const allTextBlocks = Array.from(document.querySelectorAll('span, p, div, td, b, strong'));
     
-    // Look for "Claim amount approved (After technical evaluation) : ₹ 4,852.00"
     for (const el of allTextBlocks) {
       const text = el.innerText || el.textContent || '';
       const match = text.match(/(?:Claim amount approved|Total payable amount|Amount Approved|Total Amount)[\s\S]*?[₹Rs.]\s*([\d,]+\.?\d*)/i);
@@ -593,7 +623,6 @@
       }
     }
 
-    // Fallback: sum from table
     if (!approvedAmount) {
       const amountApprovedTds = Array.from(document.querySelectorAll('td')).filter(td => td.innerText.includes('₹'));
       if (amountApprovedTds.length > 0) {
@@ -736,5 +765,5 @@
     }
   });
 
-  console.log('[Data Entry Pro v1.2.1] Content script ready with 4-Tier Unified Approval Engine.');
+  console.log('[Data Entry Pro v1.2.2] Content script ready with multi-strategy Case Action locator.');
 })();
